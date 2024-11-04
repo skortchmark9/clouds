@@ -12,8 +12,7 @@ import type {PickingInfo, MapViewState} from '@deck.gl/core';
 // const DATA_URL = 'https://opensky-network.org/api/states/all';
 // For local debugging
 const DATA_URL = './all.json';
-const MODEL_URL =
-  'https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/scenegraph-layer/airplane.glb';
+const MODEL_URL = './airplane.glb';
 const REFRESH_TIME_SECONDS = 60;
 const DROP_IF_OLDER_THAN_SECONDS = 120;
 
@@ -31,6 +30,16 @@ const INITIAL_VIEW_STATE: MapViewState = {
 };
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json';
+
+type Coordinate = {
+  lat: number;
+  lon: number;
+};
+
+type GridCell = {
+  corners_of_box: [Coordinate, Coordinate, Coordinate, Coordinate];
+  cloud_mixing_ratio: number;
+};
 
 // https://openskynetwork.github.io/opensky-api/rest.html#response
 type Aircraft = [
@@ -77,6 +86,13 @@ async function fetchData(): Promise<Aircraft[]> {
   return states;
 }
 
+async function fetchGridCells(): Promise<GridCell[]> {
+  const resp = await fetch('./cloud_mixing_ratio.json');
+  const data = await resp.json() as GridCell[];
+  console.log(data.length);
+  return data.slice(0, 10_000);
+}
+
 function getTooltip({object}: PickingInfo<Aircraft>) {
   return (
     object &&
@@ -101,6 +117,8 @@ export default function App({
   const [data, setData] = useState<Aircraft[]>();
   const [timer, setTimer] = useState<{id: number | null}>({id: null});
 
+  const [gridcells, setGridcells] = useState<GridCell[]>();
+
   useEffect(() => {
     timer.id++;
     fetchData()
@@ -118,7 +136,7 @@ export default function App({
           newData = data.map(entry => dataById[entry[DATA_INDEX.UNIQUE_ID]] || entry);
         }
 
-        setData(newData);
+      setData(newData);
 
         if (onDataLoad) {
           onDataLoad(newData.length);
@@ -134,6 +152,12 @@ export default function App({
       timer.id = null;
     };
   }, [timer]);
+
+  useEffect(() => {
+    fetchGridCells().then((_gridcells) => {
+      setGridcells(_gridcells);
+    })
+  }, []);
 
   const layer = new ScenegraphLayer<Aircraft>({
     id: 'scenegraph-layer',
@@ -166,9 +190,29 @@ export default function App({
     }
   });
 
+  const HEIGHT = 10;
+  const gridcellLayer = new ScenegraphLayer<GridCell>({
+    id: 'gridcell-layer',
+    data: gridcells,
+    pickable: true,
+    sizeScale,
+    _animations: ANIMATIONS,
+    scenegraph: MODEL_URL,
+    sizeMinPixels: 0.1,
+    sizeMaxPixels: 1.5,
+    getPosition: d => [
+      d.corners_of_box[0].lon,
+      d.corners_of_box[0].lat,
+      HEIGHT,
+    ],
+    transitions: {
+      getPosition: REFRESH_TIME_SECONDS * 1000
+    }
+  });
+
   return (
     <DeckGL
-      layers={[layer]}
+      layers={[gridcellLayer]}
       initialViewState={INITIAL_VIEW_STATE}
       controller={true}
       getTooltip={getTooltip}
