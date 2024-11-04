@@ -5,6 +5,7 @@ import {Map} from 'react-map-gl/maplibre';
 import DeckGL from '@deck.gl/react';
 import {ScenegraphLayer} from '@deck.gl/mesh-layers';
 
+import {Model, CubeGeometry} from '@luma.gl/core';
 import type {ScenegraphLayerProps} from '@deck.gl/mesh-layers';
 import type {PickingInfo, MapViewState} from '@deck.gl/core';
 
@@ -196,7 +197,6 @@ export default function App({
     data: gridcells,
     pickable: true,
     sizeScale,
-    _animations: ANIMATIONS,
     scenegraph: MODEL_URL,
     sizeMinPixels: 0.1,
     sizeMaxPixels: 1.5,
