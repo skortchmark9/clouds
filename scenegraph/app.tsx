@@ -3,9 +3,9 @@ import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Map} from 'react-map-gl/maplibre';
 import DeckGL from '@deck.gl/react';
-import {ScenegraphLayer} from '@deck.gl/mesh-layers';
+import { CubeGeometry } from "@luma.gl/engine";
+import {ScenegraphLayer, SimpleMeshLayer} from '@deck.gl/mesh-layers';
 
-import {Model, CubeGeometry} from '@luma.gl/core';
 import type {ScenegraphLayerProps} from '@deck.gl/mesh-layers';
 import type {PickingInfo, MapViewState} from '@deck.gl/core';
 
@@ -16,6 +16,9 @@ const DATA_URL = './all.json';
 const MODEL_URL = './airplane.glb';
 const REFRESH_TIME_SECONDS = 60;
 const DROP_IF_OLDER_THAN_SECONDS = 120;
+
+
+const cube = new CubeGeometry();
 
 const ANIMATIONS: ScenegraphLayerProps['_animations'] = {
   '*': {speed: 1}
@@ -91,7 +94,8 @@ async function fetchGridCells(): Promise<GridCell[]> {
   const resp = await fetch('./cloud_mixing_ratio.json');
   const data = await resp.json() as GridCell[];
   console.log(data.length);
-  return data.slice(0, 10_000);
+  return data;
+  return data.slice(0, 1_000_000);
 }
 
 function getTooltip({object}: PickingInfo<Aircraft>) {
@@ -192,7 +196,7 @@ export default function App({
   });
 
   const HEIGHT = 10;
-  const gridcellLayer = new ScenegraphLayer<GridCell>({
+  const gridcellScene = new ScenegraphLayer<GridCell>({
     id: 'gridcell-layer',
     data: gridcells,
     pickable: true,
@@ -210,9 +214,24 @@ export default function App({
     }
   });
 
+  const gridcellMesh = new SimpleMeshLayer({
+    id: 'SimpleMeshLayer',
+    data: gridcells,    
+    getColor: d => [250, 140, 140],
+    // getOrientation: d => [0, Math.random() * 180, 0],
+    getPosition: d => [
+      d.corners_of_box[0].lon,
+      d.corners_of_box[0].lat,
+      HEIGHT,
+    ],
+    mesh: cube,
+    sizeScale: 3000,
+    pickable: true,
+  });
+
   return (
     <DeckGL
-      layers={[gridcellLayer]}
+      layers={[gridcellMesh]}
       initialViewState={INITIAL_VIEW_STATE}
       controller={true}
       getTooltip={getTooltip}
