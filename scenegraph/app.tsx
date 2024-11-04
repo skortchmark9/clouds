@@ -133,7 +133,7 @@ export default function App({
       clearTimeout(timer.id);
       timer.id = null;
     };
-  }, [timer, data]);
+  }, [timer]);
 
   const layer = new ScenegraphLayer<Aircraft>({
     id: 'scenegraph-layer',
