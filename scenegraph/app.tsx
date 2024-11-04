@@ -40,10 +40,17 @@ type Coordinate = {
   lon: number;
 };
 
-type GridCell = {
+type GridCellAPI = {
   corners_of_box: [Coordinate, Coordinate, Coordinate, Coordinate];
+  cloud_mixing_ratios: number[];
+};
+
+type GridCell = {
+  corner: Coordinate;
+  height: number;
   cloud_mixing_ratio: number;
 };
+
 
 // https://openskynetwork.github.io/opensky-api/rest.html#response
 type Aircraft = [
@@ -91,11 +98,32 @@ async function fetchData(): Promise<Aircraft[]> {
 }
 
 async function fetchGridCells(): Promise<GridCell[]> {
-  const resp = await fetch('./cloud_mixing_ratio.json');
-  const data = await resp.json() as GridCell[];
-  console.log(data.length);
-  return data;
-  return data.slice(0, 1_000_000);
+  const resp = await fetch('./cloud_mixing_ratio_3d.json');
+  const data = await resp.json() as GridCellAPI[];
+
+  const expanded: GridCell[] = [];
+  const HEIGHT_SCALE = 15_000;
+
+  // Expand this so that there's one entity for each height. This
+  // is gonna make things slower so maybe don't do this later.
+  for (const box of data) {
+    for (let i = 0; i < box.cloud_mixing_ratios.length; i++) {
+      const height = i * HEIGHT_SCALE;
+      const cloud_mixing_ratio = box.cloud_mixing_ratios[i];
+      const newBox = {
+        corner: box.corners_of_box[0],
+        cloud_mixing_ratio,
+        height,
+      }
+      if (cloud_mixing_ratio) {
+        expanded.push(newBox);
+      }
+    }
+  }
+
+  console.log(expanded);
+
+  return expanded;
 }
 
 function getTooltip({object}: PickingInfo<Aircraft>) {
@@ -205,8 +233,8 @@ export default function App({
     sizeMinPixels: 0.1,
     sizeMaxPixels: 1.5,
     getPosition: d => [
-      d.corners_of_box[0].lon,
-      d.corners_of_box[0].lat,
+      d.corner.lon,
+      d.corner.lat,
       HEIGHT,
     ],
     transitions: {
@@ -214,19 +242,23 @@ export default function App({
     }
   });
 
-  const gridcellMesh = new SimpleMeshLayer({
+  const gridcellMesh = new SimpleMeshLayer<GridCell>({
     id: 'SimpleMeshLayer',
     data: gridcells,    
-    getColor: d => [250, 140, 140],
+    getColor: (d) => {
+      const max_val = 0.0017;
+      const alpha = (d.cloud_mixing_ratio / max_val) * 255
+      return [250, 140, 140, alpha]
+    },
     // getOrientation: d => [0, Math.random() * 180, 0],
     getPosition: d => [
-      d.corners_of_box[0].lon,
-      d.corners_of_box[0].lat,
-      HEIGHT,
+      d.corner.lon,
+      d.corner.lat,
+      d.height,
     ],
     mesh: cube,
-    sizeScale: 3000,
-    pickable: true,
+    sizeScale: 2000,
+    pickable: false,
   });
 
   return (
