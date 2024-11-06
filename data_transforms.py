@@ -12,9 +12,8 @@ def load_qice():
     return netCDF4.Dataset(path)
 
 
-def get_cloud_mixing_ratio_3d(ds_latlon, ds_qcloud, ds_qice, state):
-    t = 39 # Found this had some cloud_mixing in it (in kansas)
-    h = 0
+def get_cloud_mixing_ratio_3d(ds_latlon, ds_qcloud, ds_qice, state, time=39):
+    t = time # Found this had some cloud_mixing in it (in kansas)
     qcloud = ds_qcloud.variables['QCLOUD'][t, :, :, :]  # Cloud mixing ratio
     qice = ds_qice.variables['QICE'][t, :, :, :]  # Ice mixing ratio
     lat = ds_latlon.variables['XLAT'][:].data           # Latitude

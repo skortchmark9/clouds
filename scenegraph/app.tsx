@@ -99,8 +99,17 @@ async function fetchData(): Promise<Aircraft[]> {
   return states;
 }
 
-async function fetchGridCells(): Promise<GridCell[]> {
-  const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
+async function fetchGridCells(time): Promise<GridCell[]> {
+  const url = 'http://127.0.0.1:5000/cloud_data?';
+  const params = new URLSearchParams();
+  if (time) {
+    params.append('time', time);
+  }
+  params.append('states', 'kansas');
+  params.append('states', 'nebraska');
+  
+  const resp = await fetch(url + params.toString(), { mode: 'cors' })
+  // const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
   const data = await resp.json() as GridCellAPI[];
 
   const expanded: GridCell[] = [];
@@ -154,14 +163,16 @@ function getTooltip({object}: PickingInfo<Aircraft>) {
   );
 }
 
-export default function App({
+export function App({
   sizeScale = 25,
   onDataLoad,
-  mapStyle = MAP_STYLE
+  mapStyle = MAP_STYLE,
+  time,
 }: {
   sizeScale?: number;
   onDataLoad?: (count: number) => void;
   mapStyle?: string;
+  time: number;
 }) {
   const [data, setData] = useState<Aircraft[]>();
   const [timer, setTimer] = useState<{id: number | null}>({id: null});
@@ -203,10 +214,10 @@ export default function App({
   }, [timer]);
 
   useEffect(() => {
-    fetchGridCells().then((_gridcells) => {
+    fetchGridCells(time).then((_gridcells) => {
       setGridcells(_gridcells);
     })
-  }, []);
+  }, [time]);
 
   const layer = new ScenegraphLayer<Aircraft>({
     id: 'scenegraph-layer',
@@ -296,6 +307,11 @@ export default function App({
   );
 }
 
+export default function Wrapper() {
+  const [time, setTime] = useState(39);
+  return <App time={time}></App>
+}
+
 export function renderToDOM(container: HTMLDivElement) {
-  createRoot(container).render(<App />);
+  createRoot(container).render(<Wrapper />);
 }
