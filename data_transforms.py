@@ -12,17 +12,20 @@ def load_qice():
     return netCDF4.Dataset(path)
 
 
-def get_cloud_mixing_ratio_flat(ds):
-    t = 0
+def get_cloud_mixing_ratio_3d(ds_latlon, ds_qcloud, ds_qice, state):
+    t = 39 # Found this had some cloud_mixing in it (in kansas)
     h = 0
-    qcloud = ds.variables['QCLOUD'][t, h, :, :]  # Cloud mixing ratio
-    lat = ds.variables['XLAT'][:].data           # Latitude
-    lon = ds.variables['XLONG'][:].data          # Longitude
+    qcloud = ds_qcloud.variables['QCLOUD'][t, :, :, :]  # Cloud mixing ratio
+    qice = ds_qice.variables['QICE'][t, :, :, :]  # Ice mixing ratio
+    lat = ds_latlon.variables['XLAT'][:].data           # Latitude
+    lon = ds_latlon.variables['XLONG'][:].data          # Longitude
     # time = ds.variables['Time']                  # Time dimension (optional)
-    # height_levels = ds.dimensions['bottom_top'].size  # Number of vertical levels
+    height_levels = ds_latlon.dimensions['bottom_top'].size  # Number of vertical levels
 
     # Initialize the list to hold the data
     output_data = []
+
+    state_bb = get_state_bb(state)
 
     for i in range(lat.shape[0] - 1):
         for j in range(lat.shape[1] - 1):
@@ -34,54 +37,26 @@ def get_cloud_mixing_ratio_flat(ds):
                 {"lat": float(lat[i+1, j+1]), "lon": float(lon[i+1, j+1])}
             ]
 
-            # Get the cloud mixing ratio for the cell
-            cloud_mixing_ratio = float(qcloud[i, j])
-    
-            output_data.append({
-                "corners_of_box": corners_of_box,
-                "cloud_mixing_ratio": [cloud_mixing_ratio]
-            })
-
-    return output_data
-
-def get_cloud_mixing_ratio_3d(ds, state):
-    t = 39 # Found this had some cloud_mixing in it (in kansas)
-    h = 0
-    qcloud = ds.variables['QCLOUD'][t, :, :, :]  # Cloud mixing ratio
-    lat = ds.variables['XLAT'][:].data           # Latitude
-    lon = ds.variables['XLONG'][:].data          # Longitude
-    # time = ds.variables['Time']                  # Time dimension (optional)
-    height_levels = ds.dimensions['bottom_top'].size  # Number of vertical levels
-
-    # Initialize the list to hold the data
-    output_data = []
-
-    state_bb = get_state_bb(state)
-
-    for i in range(lat.shape[0] - 1):
-        for j in range(lat.shape[1] - 1):
-            first_corner = {"lat": float(lat[i, j]), "lon": float(lon[i, j])}
-
-            if not is_in_bounds(state_bb, first_corner['lat'], first_corner["lon"]):
+            if any(
+                not is_in_bounds(state_bb, corner['lat'], corner['lon'])
+                for corner in corners_of_box
+            ):
                 continue
 
-            # Get corners of each cell
-            corners_of_box = [
-                first_corner,
-                {"lat": float(lat[i+1, j]), "lon": float(lon[i+1, j])},
-                {"lat": float(lat[i, j+1]), "lon": float(lon[i, j+1])},
-                {"lat": float(lat[i+1, j+1]), "lon": float(lon[i+1, j+1])}
-            ]
-
             cloud_mixing_ratios = []
+            ice_mixing_ratios = []
             for h in range(0, height_levels):
                 cloud_mixing_ratio = float(qcloud[h, i, j])
+                ice_mixing_ratio = float(qice[h, i, j])
+
                 cloud_mixing_ratios.append(cloud_mixing_ratio)
+                ice_mixing_ratios.append(ice_mixing_ratio)
     
-            if (sum(cloud_mixing_ratios)):
+            if sum(cloud_mixing_ratios) or sum(ice_mixing_ratios):
                 output_data.append({
                     "corners_of_box": corners_of_box,
-                    "cloud_mixing_ratios": cloud_mixing_ratios
+                    "cloud_mixing_ratios": cloud_mixing_ratios,
+                    'ice_mixing_ratios': ice_mixing_ratios,
                 })
 
     return output_data
@@ -102,11 +77,16 @@ def get_state_bb(state):
 def is_in_bounds(bounds, lat, lng):
     min_lng, min_lat = bounds[0]
     max_lng, max_lat = bounds[1]
-    
+
+    # HACK we hate canada
+    if lat > 49.014322:
+        return False
+
     return min_lat <= lat <= max_lat and min_lng <= lng <= max_lng
 
 def is_in_state(state, lat, lng):
     bounds = get_state_bb(state)
+
     return is_in_bounds(bounds, lat, lng)
 
 def find_lat_lngs_in_bounds(ds, bounds):

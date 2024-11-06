@@ -43,12 +43,14 @@ type Coordinate = {
 type GridCellAPI = {
   corners_of_box: [Coordinate, Coordinate, Coordinate, Coordinate];
   cloud_mixing_ratios: number[];
+  ice_mixing_ratios: number[];
 };
 
 type GridCell = {
   corner: Coordinate;
   height: number;
   cloud_mixing_ratio: number;
+  ice_mixing_ratio: number;
 };
 
 
@@ -98,7 +100,7 @@ async function fetchData(): Promise<Aircraft[]> {
 }
 
 async function fetchGridCells(): Promise<GridCell[]> {
-  const resp = await fetch('./cloud_mixing_ratio_us.json');
+  const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
   const data = await resp.json() as GridCellAPI[];
 
   const expanded: GridCell[] = [];
@@ -113,14 +115,21 @@ async function fetchGridCells(): Promise<GridCell[]> {
     for (let i = 0; i < box.cloud_mixing_ratios.length; i++) {
       const height = i * HEIGHT_SCALE;
       const cloud_mixing_ratio = box.cloud_mixing_ratios[i];
+      const ice_mixing_ratio = box.ice_mixing_ratios[i];
+
       total++;
 
-      if (cloud_mixing_ratio) {
+      if (cloud_mixing_ratio || ice_mixing_ratio) {
         const newBox = {
           corner: box.corners_of_box[0],
           cloud_mixing_ratio,
+          ice_mixing_ratio,
           height,
         }
+
+        // if (expanded.length > 1e6) {
+        //   continue;
+        // }
   
         expanded.push(newBox);
         nonNull++;
@@ -129,7 +138,7 @@ async function fetchGridCells(): Promise<GridCell[]> {
   }
 
   console.log(`${Math.round(100 * nonNull / total)}% of cells have nonzero cloud mixing ratio`)
-
+  console.log(expanded);
   return expanded;
 }
 
@@ -253,9 +262,16 @@ export default function App({
     id: 'SimpleMeshLayer',
     data: gridcells,    
     getColor: (d) => {
-      const max_val = 0.0017;
-      const alpha = (d.cloud_mixing_ratio / max_val) * 255
-      return [250, 140, 140, alpha]
+      const max_cloud_mixing = 0.0017;
+      const max_ice_mixing = 0.0013;
+
+      const normalized_cloud = d.cloud_mixing_ratio / max_cloud_mixing;
+      const normalized_ice = d.ice_mixing_ratio / max_ice_mixing;
+
+      const alpha = (normalized_ice + normalized_cloud + 0.2) * 255;
+      const red = normalized_cloud * 255;
+      const blue = normalized_ice * 255;
+      return [red, blue, 140, alpha]
     },
     // getOrientation: d => [0, Math.random() * 180, 0],
     getPosition: d => [

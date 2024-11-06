@@ -34,7 +34,7 @@ Formatted timestamps (Times) are user-friendly and good for display.
 // ci system for scientists
 - sell to labs - not only academic ones
 
-
+cat cloud_mixing_ratio_us.json| gzip > cloud_mixing_ratio_us.json.gz
 
 --
 
