@@ -56,7 +56,7 @@ def get_cloud_mixing_ratio_3d(ds, state):
     # Initialize the list to hold the data
     output_data = []
 
-    state_bb = get_state_bb('Kansas')
+    state_bb = get_state_bb(state)
 
     for i in range(lat.shape[0] - 1):
         for j in range(lat.shape[1] - 1):
@@ -78,10 +78,11 @@ def get_cloud_mixing_ratio_3d(ds, state):
                 cloud_mixing_ratio = float(qcloud[h, i, j])
                 cloud_mixing_ratios.append(cloud_mixing_ratio)
     
-            output_data.append({
-                "corners_of_box": corners_of_box,
-                "cloud_mixing_ratios": cloud_mixing_ratios
-            })
+            if (sum(cloud_mixing_ratios)):
+                output_data.append({
+                    "corners_of_box": corners_of_box,
+                    "cloud_mixing_ratios": cloud_mixing_ratios
+                })
 
     return output_data
 

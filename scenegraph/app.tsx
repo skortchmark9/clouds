@@ -98,30 +98,37 @@ async function fetchData(): Promise<Aircraft[]> {
 }
 
 async function fetchGridCells(): Promise<GridCell[]> {
-  const resp = await fetch('./cloud_mixing_ratio_3d.json');
+  const resp = await fetch('./cloud_mixing_ratio_us.json');
   const data = await resp.json() as GridCellAPI[];
 
   const expanded: GridCell[] = [];
   const HEIGHT_SCALE = 15_000;
 
+
+  let total = 0;
+  let nonNull = 0;
   // Expand this so that there's one entity for each height. This
   // is gonna make things slower so maybe don't do this later.
   for (const box of data) {
     for (let i = 0; i < box.cloud_mixing_ratios.length; i++) {
       const height = i * HEIGHT_SCALE;
       const cloud_mixing_ratio = box.cloud_mixing_ratios[i];
-      const newBox = {
-        corner: box.corners_of_box[0],
-        cloud_mixing_ratio,
-        height,
-      }
+      total++;
+
       if (cloud_mixing_ratio) {
+        const newBox = {
+          corner: box.corners_of_box[0],
+          cloud_mixing_ratio,
+          height,
+        }
+  
         expanded.push(newBox);
+        nonNull++;
       }
     }
   }
 
-  console.log(expanded);
+  console.log(`${Math.round(100 * nonNull / total)}% of cells have nonzero cloud mixing ratio`)
 
   return expanded;
 }
@@ -257,7 +264,7 @@ export default function App({
       d.height,
     ],
     mesh: cube,
-    sizeScale: 2000,
+    sizeScale: 3000,
     pickable: false,
   });
 
