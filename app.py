@@ -73,7 +73,6 @@ for i in range(0, 100):
 
 @app.route('/cloud_data', methods=['GET'])
 def cloud_data():
-    print('hittin')
     time = int(request.args.get('time', 39))
     states = request.args.getlist('states')
     print(states)
