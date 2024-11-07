@@ -1,11 +1,21 @@
 /* global fetch, setTimeout, clearTimeout */
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Map} from 'react-map-gl/maplibre';
 import DeckGL from '@deck.gl/react';
 import { CubeGeometry } from "@luma.gl/engine";
 import {ScenegraphLayer, SimpleMeshLayer} from '@deck.gl/mesh-layers';
-
+import ControlPanel, {
+  Button,
+  Checkbox,
+  Multibox,
+  Select,
+  Text,
+  Color,
+  Range,
+  Interval,
+  Custom,
+} from 'react-control-panel';
 import type {ScenegraphLayerProps} from '@deck.gl/mesh-layers';
 import type {PickingInfo, MapViewState} from '@deck.gl/core';
 
@@ -99,14 +109,15 @@ async function fetchData(): Promise<Aircraft[]> {
   return states;
 }
 
-async function fetchGridCells(time): Promise<GridCell[]> {
+async function fetchGridCells(time, states): Promise<GridCell[]> {
   const url = 'http://127.0.0.1:5000/cloud_data?';
   const params = new URLSearchParams();
   if (time) {
     params.append('time', time);
   }
-  params.append('states', 'kansas');
-  params.append('states', 'nebraska');
+  for (const state of states) {
+    params.append('states', state);
+  }
   
   const resp = await fetch(url + params.toString(), { mode: 'cors' })
   // const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
@@ -168,11 +179,13 @@ export function App({
   onDataLoad,
   mapStyle = MAP_STYLE,
   time,
+  states
 }: {
   sizeScale?: number;
   onDataLoad?: (count: number) => void;
   mapStyle?: string;
   time: number;
+  states: string[];
 }) {
   const [data, setData] = useState<Aircraft[]>();
   const [timer, setTimer] = useState<{id: number | null}>({id: null});
@@ -214,10 +227,10 @@ export function App({
   }, [timer]);
 
   useEffect(() => {
-    fetchGridCells(time).then((_gridcells) => {
+    fetchGridCells(time, states).then((_gridcells) => {
       setGridcells(_gridcells);
     })
-  }, [time]);
+  }, [time, states]);
 
   const layer = new ScenegraphLayer<Aircraft>({
     id: 'scenegraph-layer',
@@ -309,6 +322,45 @@ export function App({
 
 export default function Wrapper() {
   const [time, setTime] = useState(39);
+  const allStates = ['kansas', 'nebraska', 'oklahoma'];
+  const [currentStates, setCurrentStates] = useState([true, false, false]);
+  const initialState = {
+    time: time,
+    states: currentStates
+  };
+
+  const onChange = useCallback((key, value) => {
+    if (key === 'time') {
+      setTime(value);
+    }
+
+    if (key === 'states') {
+      setCurrentStates(value.slice());
+    }
+  }, [])
+
+  const selectedStates = allStates.filter((_, i) => currentStates[i]);
+  console.log(selectedStates);
+
+  return (<>
+    <App time={time} states={selectedStates}></App>
+    <ControlPanel
+      draggable
+      theme='dark'
+      position={'top-left'}
+      initialState={initialState}
+      onChange={onChange}
+      width={500}
+      style={{ marginRight: 30 }}
+    >
+      <Range label='time' min={0} max={100} />
+      <Multibox
+        label='states'
+        colors={allStates.map(() => ['rgb(100,120,230)'])}
+        names={allStates}
+      />
+    </ControlPanel>
+  </>)
   return <App time={time}></App>
 }
 

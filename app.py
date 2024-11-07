@@ -2,6 +2,12 @@ from flask import Flask, jsonify, request
 from flask_compress import Compress
 from flask_cors import CORS
 from flask_caching import Cache
+from functools import lru_cache 
+import time
+import json
+import urllib
+import os
+import pickle
 
 from data_transforms import (
     load_qcloud,
@@ -37,13 +43,37 @@ ds_latlon = load_qcloud()  # Assuming this has latitude and longitude variables
 ds_qcloud = load_qcloud()
 ds_qice = load_qice()
 
-@app.route('/', methods=['GET'])
-def hey():
-    return 'hi'
 
+def disk_cache_gcmr(*args):
+    cache_dir = 'cache'
+    os.makedirs(cache_dir, exist_ok=True)
+
+    try:
+        url = request.url
+    except:
+        state = args[3]
+        time = args[4]
+        url = f"http://127.0.0.1:5000/cloud_data?time={time}&states={state}"
+
+    path = urllib.parse.quote_plus(url)
+    path = cache_dir + '/' + path
+    if os.path.exists(path):
+        with open(path, 'rb') as f:
+            return pickle.load(f)
+        
+    output = get_cloud_mixing_ratio_3d(*args)
+    with open(path, 'wb') as f:
+        pickle.dump(output, f)
+
+    return output
+
+
+for i in range(0, 100):
+    disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, 'kansas', i)
 
 @app.route('/cloud_data', methods=['GET'])
 def cloud_data():
+    print('hittin')
     time = int(request.args.get('time', 39))
     states = request.args.getlist('states')
     print(states)
@@ -51,7 +81,7 @@ def cloud_data():
         return jsonify({'error': 'Please provide a state name'}), 400
     
     data = sum([
-        get_cloud_mixing_ratio_3d(ds_latlon, ds_qcloud, ds_qice, state, time)
+        disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, state, time)
         for state in states
     ], [])
     
