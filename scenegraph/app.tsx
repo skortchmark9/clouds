@@ -51,35 +51,15 @@ type GridCell = {
   ice_mixing_ratio: number;
 };
 
-type GridCellsAtTime = {
-  time: number;
-  gridcells: GridCell[];
-};
-
-
-async function fetchGridCells(time, states): Promise<GridCell[]> {
-  const url = 'http://127.0.0.1:5000/cloud_data?';
-  const params = new URLSearchParams();
-  if (time) {
-    params.append('time', time);
-  }
-  for (const state of states) {
-    params.append('states', state);
-  }
-  
-  const resp = await fetch(url + params.toString(), { mode: 'cors' })
-  // const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
-  const data = await resp.json() as GridCellAPI[];
-
+function expandAPICells(boxes: GridCellAPI[]): GridCell[] {
   const expanded: GridCell[] = [];
-  const HEIGHT_SCALE = 15_000;
-
+  const HEIGHT_SCALE = 4_000;
 
   let total = 0;
   let nonNull = 0;
   // Expand this so that there's one entity for each height. This
   // is gonna make things slower so maybe don't do this later.
-  for (const box of data) {
+  for (const box of boxes) {
     for (let i = 0; i < box.cloud_mixing_ratios.length; i++) {
       const height = i * HEIGHT_SCALE;
       const cloud_mixing_ratio = box.cloud_mixing_ratios[i];
@@ -104,34 +84,86 @@ async function fetchGridCells(time, states): Promise<GridCell[]> {
       }
     }
   }
-
-  console.log(`${Math.round(100 * nonNull / total)}% of cells have nonzero cloud mixing ratio`)
-  console.log(expanded);
   return expanded;
+}
+
+async function fetchGridCells(time, states): Promise<GridCell[]> {
+  const url = 'http://127.0.0.1:5000/cloud_data?';
+  const params = new URLSearchParams();
+  if (time) {
+    params.append('time', time);
+  }
+  for (const state of states) {
+    params.append('states', state);
+  }
+  
+  const resp = await fetch(url + params.toString(), { mode: 'cors' })
+  // const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
+  const data = await resp.json() as GridCellAPI[];
+
+  return expandAPICells(data);
+}
+
+async function fetchEntireUs(): Promise<Record<number, GridCell[]>> {
+  const url = '/cloud_mixing_ratio_us.json.gz';
+  const resp = await fetch(url, { mode: 'cors' })
+  const data = await resp.json() as GridCellAPI[];
+
+  const expanded = expandAPICells(data);
+  const output = {};
+  for (let i = 0; i < 100; i++) {
+    output[i] = expanded;
+  }
+
+  return output;
+}
+
+
+async function fetchGridTimeRange(states: string[], bounds: number[]): Promise<Record<number, GridCell[]>> {
+  const url = 'http://127.0.0.1:5000/cloud_data_timerange?';
+
+  const output = {};
+  const min = bounds[0];
+  const max = bounds[1];
+
+  let i = min;
+  while(i < max) {
+    const params = new URLSearchParams();
+    for (const state of states) {
+      params.append('states', state);
+    }
+    // Maybe batches of 10 will not crash as much
+    params.append('minTime', (i).toString());
+    params.append('maxTime', (i + 10).toString());
+    try {
+      const resp = await fetch(url + params.toString(), { mode: 'cors' })
+      const data = await resp.json() as Record<number, GridCellAPI[]>;  
+      for (const [key, value] of Object.entries(data)) {
+        output[key] = expandAPICells(value);
+      }  
+    } catch (e) {
+      console.error(e);
+      console.log('womp');
+    }
+
+    i += 10;
+    i = Math.min(max, i);
+  }
+
+  return output;
 }
 
 export function App({
   sizeScale = 25,
   onDataLoad,
   mapStyle = MAP_STYLE,
-  time,
-  states
+  gridcells,
 }: {
   sizeScale?: number;
   onDataLoad?: (count: number) => void;
   mapStyle?: string;
-  time: number;
-  states: string[];
+  gridcells: GridCell[];
 }) {
-  const [gridcells, setGridcells] = useState<GridCell[]>();
-
-  useEffect(() => {
-    fetchGridCells(time, states).then((_gridcells) => {
-      setGridcells(_gridcells);
-    })
-  }, [time, states]);
-
-
   const gridcellMesh = new SimpleMeshLayer<GridCell>({
     id: 'SimpleMeshLayer',
     data: gridcells,    
@@ -142,7 +174,7 @@ export function App({
       const normalized_cloud = d.cloud_mixing_ratio / max_cloud_mixing;
       const normalized_ice = d.ice_mixing_ratio / max_ice_mixing;
 
-      const alpha = (normalized_ice + normalized_cloud + 0.2) * 255;
+      const alpha = (normalized_ice + (normalized_cloud * 2)) * 255;
       const red = normalized_cloud * 255;
       const blue = normalized_ice * 255;
       return [red, blue, 140, alpha]
@@ -171,12 +203,32 @@ export function App({
 
 export default function Wrapper() {
   const [time, setTime] = useState(39);
-  const allStates = ['kansas', 'nebraska', 'oklahoma'];
-  const [currentStates, setCurrentStates] = useState([true, false, false]);
+  const allStates = ['kansas', 'nebraska', 'oklahoma', 'california'];
+  const [gridCellsByTime, setGridcellsByTime] =  useState({});
+  const [wholeUS, setWholeUS] = useState(true);
+  const [currentStates, setCurrentStates] = useState([true, false, false, false]);
+  const minTime = 20;
+  const maxTime = 80
   const initialState = {
     time: time,
-    states: currentStates
+    states: currentStates,
+    'Whole US': wholeUS
   };
+
+  useEffect(() => {
+    const selectedStates = allStates.filter((_, i) => currentStates[i]);
+
+    if (wholeUS) {
+      fetchEntireUs().then((_gridcellsByTime) => {
+        setGridcellsByTime(_gridcellsByTime);
+      })  
+    } else {
+      fetchGridTimeRange(selectedStates, [minTime, maxTime]).then((_gridcellsByTime) => {
+        setGridcellsByTime(_gridcellsByTime);
+      })
+    }
+  }, [currentStates, wholeUS]);
+
 
   const onChange = useCallback((key, value) => {
     if (key === 'time') {
@@ -186,13 +238,14 @@ export default function Wrapper() {
     if (key === 'states') {
       setCurrentStates(value.slice());
     }
+
+    if (key === 'Whole US') {
+      setWholeUS(value);
+    }
   }, [])
 
-  const selectedStates = allStates.filter((_, i) => currentStates[i]);
-  console.log(selectedStates);
-
   return (<>
-    <App time={time} states={selectedStates}></App>
+    <App gridcells={gridCellsByTime[time]}></App>
     <ControlPanel
       draggable
       theme='dark'
@@ -202,7 +255,8 @@ export default function Wrapper() {
       width={500}
       style={{ marginRight: 30 }}
     >
-      <Range label='time' min={0} max={100} />
+      <Range label='time' step={1} min={minTime} max={maxTime} />
+      <Checkbox label='Whole US'></Checkbox>
       <Multibox
         label='states'
         colors={allStates.map(() => ['rgb(100,120,230)'])}

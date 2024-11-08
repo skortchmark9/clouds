@@ -33,7 +33,7 @@ def get_cache_key(request):
 compress = Compress()
 compress.init_app(app)
 
-# Set up cache for compressed responses
+# # Set up cache for compressed responses
 compress.cache = cache
 compress.cache_key = get_cache_key
 
@@ -48,12 +48,9 @@ def disk_cache_gcmr(*args):
     cache_dir = 'cache'
     os.makedirs(cache_dir, exist_ok=True)
 
-    try:
-        url = request.url
-    except:
-        state = args[3]
-        time = args[4]
-        url = f"http://127.0.0.1:5000/cloud_data?time={time}&states={state}"
+    state = args[3]
+    time = args[4]
+    url = f"http://127.0.0.1:5000/cloud_data?time={time}&states={state}"
 
     path = urllib.parse.quote_plus(url)
     path = cache_dir + '/' + path
@@ -69,7 +66,9 @@ def disk_cache_gcmr(*args):
 
 
 for i in range(0, 100):
-    disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, 'kansas', i)
+    if i % 10 == 0:
+        print(i)
+    disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, 'california', i)
 
 @app.route('/cloud_data', methods=['GET'])
 def cloud_data():
@@ -86,6 +85,31 @@ def cloud_data():
     
     try:
         return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+
+@app.route('/cloud_data_timerange', methods=['GET'])
+def cloud_data_timerange():
+    states = request.args.getlist('states')
+    min_time = int(request.args.get('minTime', 0))
+    max_time = int(request.args.get('maxTime', 100))
+    if not states:
+        return jsonify({'error': 'Please provide a state name'}), 400
+
+    times = range(min_time, max_time)
+    output = {}
+    for time in times:
+        if time % 10 == 0:
+            print(time)
+
+        data = sum([disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, state, time)
+            for state in states
+        ], [])
+        output[time] = data
+    
+    try:
+        return jsonify(output)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
