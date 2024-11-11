@@ -36,25 +36,6 @@ const lightingEffect = new LightingEffect({ ambientLight: sun });
 const effects = [];
 // effects.push(lightingEffect);
 
-
-function createCheckerboardTexture() {
-  const size = 256;  // Texture size
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-
-  // Draw checkerboard
-  for (let y = 0; y < size; y += 32) {
-    for (let x = 0; x < size; x += 32) {
-      ctx.fillStyle = (x / 32 + y / 32) % 2 === 0 ? '#FFFFFF' : '#000000';
-      ctx.fillRect(x, y, 32, 32);
-    }
-  }
-  return canvas;
-}
-
-const checkerboard = createCheckerboardTexture();
-
 const INITIAL_VIEW_STATE: MapViewState = {
   latitude: 38.4940000,
   longitude: -98.4270379,
@@ -248,11 +229,60 @@ export function App({
     pickable: false,
   });
 
+  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+
+  // Function to toggle pitch between 0 and 90
+  const togglePitch = () => {
+    setViewState(prev => ({
+      ...prev,
+      pitch: prev.pitch === 0 ? 90 : 0
+    }));
+  };
+
+  const shift = ({left = 0, right = 0, up = 0, down = 0}) => {
+    setViewState(prev => ({
+      ...prev,
+      position: [
+        prev.position[0] - left + right,
+        prev.position[1] + up - down,
+        prev.position[2]
+      ]
+    }));
+  };
+
+
+  // Listen for the "P" key press to change pitch
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      if (event.key.toLowerCase() === 'p') {
+        togglePitch();
+      }
+      if (event.key === 'ArrowLeft') {
+        shift({left: 4000});
+      }
+      if (event.key === 'ArrowRight') {
+        shift({right: 4000});
+      }
+      if (event.key === 'ArrowUp') {
+        shift({up: 4000});
+      }
+      if (event.key === 'ArrowDown') {
+        shift({down: 4000});
+      }
+
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [viewState]);
+
+
   return (
     <DeckGL
       layers={[gridcellMesh]}
-      initialViewState={INITIAL_VIEW_STATE}
-      controller={true}
+      viewState={viewState}
+      onViewStateChange={({ viewState }) => setViewState(viewState)}
+      controller={false}
     >
       {/* <Map reuseMaps mapStyle={mapStyle} {...INITIAL_VIEW_STATE} /> */}
     </DeckGL>

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "vite --open",
     "start-local": "vite --config ../../vite.config.local.mjs",
-    "build": "vite build"
+    "build": "vite build",
+    "test:ui": "set DEBUG=test && jest --runInBand --detectOpenHandles --config=jest-puppeteer.config.js --forceExit",
+    "update:snapshots": "jest --updateSnapshot --config=jest-puppeteer.config.js"
   },
   "dependencies": {
     "@luma.gl/core": "^9.0.0",
@@ -20,6 +22,17 @@
     "react-map-gl": "^7.1.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-typescript": "^7.26.0",
+    "@types/jest": "^29.5.14",
+    "@types/jest-image-snapshot": "^6.4.0",
+    "@types/puppeteer": "^5.4.7",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "jest-image-snapshot": "^6.4.0",
+    "jest-puppeteer": "^10.1.4",
+    "puppeteer": "^23.7.1",
     "typescript": "^4.6.0",
     "vite": "^4.0.0"
   }
