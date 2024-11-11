@@ -2,7 +2,7 @@ import pandas as pd
 import json
 import gzip
 import netCDF4
-from collections import defaultdict
+from collections import defaultdict, Counter
 import time
 
 def load_z():
@@ -71,10 +71,11 @@ def load_data(t = 0):
         'QGRAUP': graupel.variables['QGRAUP'][t, :, :, :].data,
         'QRAIN': rain.variables['QRAIN'][t, :, :, :].data,
         'QSNOW': snow.data,
-        'HEIGHTS': heights.data
+        'HEIGHTS': heights.data,
+        'TIME': time_to_match,
     }
     end = time.time()
-    print(f"Time to load data: {end - start}s")
+    print(f"Time to load data for time t={t}: {end - start}s")
     return output
 
 
@@ -89,6 +90,7 @@ def calculate_cloud_condensation_3d(latlon, data, state = None):
     qrain = data['QRAIN']
     qsnow = data['QSNOW']
     heights = data['HEIGHTS']
+    time_str = data['TIME']
 
     # Initialize the list to hold the data
     output_data = []
@@ -129,7 +131,6 @@ def calculate_cloud_condensation_3d(latlon, data, state = None):
 
                 # Heights are half-levels, so we need to interpolate
                 # to get to the bottom of the cell.
-
                 #    h + 2
                 #
                 #    h + 1  
@@ -137,7 +138,7 @@ def calculate_cloud_condensation_3d(latlon, data, state = None):
                 #    h
                 cell_height = (heights[h + 1, i, j] - heights[h, i, j]) / 2
                 cell_height += heights[h, i, j]
-                cell_heights.append(float(cell_height))
+                cell_heights.append(round(float(cell_height)))
 
                 total_condensation_in_cell = sum([
                     cell_qcloud,
@@ -155,7 +156,10 @@ def calculate_cloud_condensation_3d(latlon, data, state = None):
                     'cell_heights': cell_heights,
                 })
 
-    return output_data
+    return {
+        'time': time_str,
+        'boxes': output_data
+    }
 
 
 def get_state_bb(state):
@@ -199,25 +203,18 @@ def find_lat_lngs_in_bounds(ds, bounds):
             yield (i, j)
 
 
-def find_rainiest_time(ds, state):
-    # time = ds.variables['Time']                  # Time dimension (optional)
-    height_levels = ds.dimensions['bottom_top'].size  # Number of vertical levels
+def find_rainiest_time(state):
+    latlon = load_latlon()
+    c = Counter()
+    for t in range(0, 235):
+        data = load_data(t)
+        output = calculate_cloud_condensation_3d(latlon, data, state)
+        total = sum([
+            sum(cell['total_condensation']) for cell in output
+        ])
+        c[t] = total
 
-    by_time = defaultdict(float)
-
-    state_bb = get_state_bb(state)
-    lat_lngs = list(find_lat_lngs_in_bounds(ds, state_bb))
-
-    for t in range(0, 250):
-        print(f"Trying time: {t} - last time got: {by_time.get(t - 1)}")
-        for h in range(height_levels):
-            qcloud_data = ds.variables['QCLOUD'][t, h, :, :].data
-            for (i, j) in lat_lngs:
-                by_time[t] += qcloud_data[i, j]
-
-    return by_time
-
-
+    return c
 
 
 def write_json(data, suffix):

@@ -3,7 +3,9 @@ import React, {useCallback, useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Map} from 'react-map-gl/maplibre';
 import DeckGL from '@deck.gl/react';
-import { CubeGeometry } from "@luma.gl/engine";
+import { CubeGeometry, SphereGeometry } from "@luma.gl/engine";
+import {Layer, LightingEffect, _SunLight as SunLight} from '@deck.gl/core';
+
 import {ScenegraphLayer, SimpleMeshLayer} from '@deck.gl/mesh-layers';
 import ControlPanel, {
   Button,
@@ -17,19 +19,53 @@ import ControlPanel, {
   Custom,
 } from 'react-control-panel';
 import type {ScenegraphLayerProps} from '@deck.gl/mesh-layers';
-import type {PickingInfo, MapViewState} from '@deck.gl/core';
+import {type PickingInfo, type MapViewState, OrthographicView} from '@deck.gl/core';
+import { CullFaceMode } from 'maplibre-gl';
 
-
+const sphere = new SphereGeometry();
 const cube = new CubeGeometry();
 
+const sun = new SunLight({
+  timestamp: 972748800000, // Sat Oct 28 2000 12:00:00 GMT-0400 (Eastern Daylight Time), 
+  color: [255, 255, 255],
+  intensity: 1
+});
+
+
+const lightingEffect = new LightingEffect({ ambientLight: sun });
+const effects = [];
+// effects.push(lightingEffect);
+
+
+function createCheckerboardTexture() {
+  const size = 256;  // Texture size
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Draw checkerboard
+  for (let y = 0; y < size; y += 32) {
+    for (let x = 0; x < size; x += 32) {
+      ctx.fillStyle = (x / 32 + y / 32) % 2 === 0 ? '#FFFFFF' : '#000000';
+      ctx.fillRect(x, y, 32, 32);
+    }
+  }
+  return canvas;
+}
+
+const checkerboard = createCheckerboardTexture();
+
 const INITIAL_VIEW_STATE: MapViewState = {
-  latitude: 39.1,
-  longitude: -94.57,
-  zoom: 3.8,
-  minPitch: -70,
+  latitude: 38.4940000,
+  longitude: -98.4270379,
+  zoom: 8,
+  pitch: 0,
+  minPitch: 0,  
+  maxPitch: 90,
+  // minPitch: -70,
+  // maxPitch: 100,
   maxZoom: 16,
-  pitch: 90,
-  bearing: 0
+  position: [0, 0, 10_000],
 };
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json';
@@ -37,6 +73,11 @@ const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-styl
 type Coordinate = {
   lat: number;
   lon: number;
+};
+
+type APIResponse = {
+  time: string;
+  boxes: GridCellAPI[];
 };
 
 type GridCellAPI = {
@@ -49,18 +90,23 @@ type GridCell = {
   corner: Coordinate;
   height: number;
   total_condensation: number;
+  heightScale: number;
 };
 
 function expandAPICells(boxes: GridCellAPI[]): GridCell[] {
   const expanded: GridCell[] = [];
-  const HEIGHT_STEP = 4000;
+  const HEIGHT_STEP = 0;
   let total = 0;
   let nonNull = 0;
+  console.log('api', boxes);
+  const heightScales = [55,66,76,85,96,110,131,150,170,190,215,246,277,307,342,382,422,461,481,481,480,480,479,479,478,477,476,476,474,475,474,477,480,484,489,492,496,499,503,509,517,530,542,556,564,578,602,627,609];
   // Expand this so that there's one entity for each height. This
   // is gonna make things slower so maybe don't do this later.
   for (const box of boxes) {
     for (let i = 0; i < box.total_condensation.length; i++) {
-      const height = i * HEIGHT_STEP;
+      const height = box.cell_heights[i] + HEIGHT_STEP * 20
+      const heightScale = heightScales[i];
+      // const height = i * HEIGHT_STEP;
       const total_condensation = box.total_condensation[i];
 
       total++;
@@ -70,14 +116,15 @@ function expandAPICells(boxes: GridCellAPI[]): GridCell[] {
           corner: box.corners_of_box[0],
           total_condensation,
           height,
+          heightScale
         }
   
         expanded.push(newBox);
         nonNull++;
-        // if (nonNull > 2e6) {
-        //   console.log(expanded);
-        //   return expanded;
-        // }
+        if (nonNull > 2e6) {
+          console.log(expanded);
+          return expanded;
+        }
       }
     }
   }
@@ -98,17 +145,19 @@ async function fetchGridCells(time, states): Promise<GridCell[]> {
   
   const resp = await fetch(url + params.toString(), { mode: 'cors' })
   // const resp = await fetch('./cloud_mixing_ratio_midwest.json.gz');
-  const data = await resp.json() as GridCellAPI[];
+  const data = await resp.json() as APIResponse;
 
-  return expandAPICells(data);
+  console.log('Got data for time', data.time);
+  return expandAPICells(data.boxes);
 }
 
 async function fetchEntireUs(): Promise<Record<number, GridCell[]>> {
   const url = '/cloud_condensation_kansas.json.gz';
   const resp = await fetch(url, { mode: 'cors' })
-  const data = await resp.json() as GridCellAPI[];
+  const data = await resp.json() as APIResponse;
+  console.log('Got data for time', data.time);
 
-  const expanded = expandAPICells(data);
+  const expanded = expandAPICells(data.boxes);
   const output = {};
   for (let i = 0; i < 100; i++) {
     output[i] = expanded;
@@ -163,17 +212,29 @@ export function App({
   mapStyle?: string;
   gridcells: GridCell[];
 }) {
+  const max = (gridcells || []).reduce((acc, d) => Math.max(acc, d.total_condensation), 0) / 2;
+  console.log('max', max);
+  const translation: [number, number, number] = [2000, 2000, 0];
   const gridcellMesh = new SimpleMeshLayer<GridCell>({
     id: 'SimpleMeshLayer',
+    parameters: {
+      // blendAlphaOperation: 'max',
+      depthMask: false,
+      // depthTest: false
+    },
     data: gridcells,    
     getColor: (d) => {
-      const max = 0.002;
-      const normalized_cloud = d.total_condensation / max;
+      const normalized_cloud = Math.min(d.total_condensation / max);
 
       const alpha = Math.min(normalized_cloud * 255, 255);
-      // const alpha = 255;
-      return [120, 255, 140, alpha]
+      return [
+        100,
+        255,
+        255,
+        alpha,
+      ];
     },
+    wireframe: false,
     // getOrientation: d => [0, Math.random() * 180, 0],
     getPosition: d => [
       d.corner.lon,
@@ -181,7 +242,9 @@ export function App({
       d.height,
     ],
     mesh: cube,
-    sizeScale: 2000,
+    // getOrientation: (d) => [Math.random() * 360, Math.random() * 360, Math.random() * 360],
+    getScale: d => [4000, 4000, d.heightScale],
+    getTranslation: d => translation,
     pickable: false,
   });
 
@@ -191,7 +254,7 @@ export function App({
       initialViewState={INITIAL_VIEW_STATE}
       controller={true}
     >
-      <Map reuseMaps mapStyle={mapStyle} />
+      {/* <Map reuseMaps mapStyle={mapStyle} {...INITIAL_VIEW_STATE} /> */}
     </DeckGL>
   );
 }
@@ -241,7 +304,7 @@ export default function Wrapper() {
 
   return (<>
     <App gridcells={gridCellsByTime[time]}></App>
-    <ControlPanel
+    {/* <ControlPanel
       draggable
       theme='dark'
       position={'top-left'}
@@ -257,7 +320,7 @@ export default function Wrapper() {
         colors={allStates.map(() => ['rgb(100,120,230)'])}
         names={allStates}
       />
-    </ControlPanel>
+    </ControlPanel> */}
   </>);
 }
 
