@@ -10,9 +10,9 @@ import os
 import pickle
 
 from data_transforms import (
-    load_qcloud,
-    load_qice,
-    get_cloud_mixing_ratio_3d
+    load_latlon,
+    load_data,
+    calculate_cloud_condensation_3d
 )
 
 app = Flask(__name__)
@@ -39,17 +39,13 @@ compress.cache_key = get_cache_key
 
 
 # Load datasets at startup
-ds_latlon = load_qcloud()  # Assuming this has latitude and longitude variables
-ds_qcloud = load_qcloud()
-ds_qice = load_qice()
+latlon = load_latlon()
 
 
-def disk_cache_gcmr(*args):
+def disk_cache_ccc(time, state):
     cache_dir = 'cache'
     os.makedirs(cache_dir, exist_ok=True)
 
-    state = args[3]
-    time = args[4]
     url = f"http://127.0.0.1:5000/cloud_data?time={time}&states={state}"
 
     path = urllib.parse.quote_plus(url)
@@ -58,7 +54,8 @@ def disk_cache_gcmr(*args):
         with open(path, 'rb') as f:
             return pickle.load(f)
         
-    output = get_cloud_mixing_ratio_3d(*args)
+    data = load_data(time)
+    output = calculate_cloud_condensation_3d(latlon, data, state)
     with open(path, 'wb') as f:
         pickle.dump(output, f)
 
@@ -68,7 +65,7 @@ def disk_cache_gcmr(*args):
 for i in range(0, 100):
     if i % 10 == 0:
         print(i)
-    disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, 'california', i)
+    disk_cache_ccc(i, 'california')
 
 @app.route('/cloud_data', methods=['GET'])
 def cloud_data():
@@ -79,7 +76,7 @@ def cloud_data():
         return jsonify({'error': 'Please provide a state name'}), 400
     
     data = sum([
-        disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, state, time)
+        disk_cache_ccc(time, state)
         for state in states
     ], [])
     
@@ -103,7 +100,7 @@ def cloud_data_timerange():
         if time % 10 == 0:
             print(time)
 
-        data = sum([disk_cache_gcmr(ds_latlon, ds_qcloud, ds_qice, state, time)
+        data = sum([disk_cache_ccc(time, state)
             for state in states
         ], [])
         output[time] = data

@@ -1,7 +1,13 @@
 import pandas as pd
 import json
+import gzip
 import netCDF4
 from collections import defaultdict
+import time
+
+def load_z():
+    path = 'data/wrf3d_d01_CTRL_Z_20001001.nc'
+    return netCDF4.Dataset(path)
 
 def load_qcloud():
     path = 'data/wrf3d_d01_PGW_QCLOUD_200010.nc'
@@ -11,20 +17,86 @@ def load_qice():
     path = 'data/wrf3d_d01_PGW_QICE_200010.nc'
     return netCDF4.Dataset(path)
 
+def load_latlon():
+    cloud = netCDF4.Dataset('data/wrf3d_d01_PGW_QCLOUD_200010.nc')
+    height_levels = cloud.dimensions['bottom_top'].size
+    output = {
+        'XLAT': cloud.variables['XLAT'][:].data,
+        'XLONG': cloud.variables['XLONG'][:].data,
+        'HEIGHT_LEVELS': height_levels
+    }
+    return output
 
-def get_cloud_mixing_ratio_3d(ds_latlon, ds_qcloud, ds_qice, state, time=39):
-    t = time # Found this had some cloud_mixing in it (in kansas)
-    qcloud = ds_qcloud.variables['QCLOUD'][t, :, :, :]  # Cloud mixing ratio
-    qice = ds_qice.variables['QICE'][t, :, :, :]  # Ice mixing ratio
-    lat = ds_latlon.variables['XLAT'][:].data           # Latitude
-    lon = ds_latlon.variables['XLONG'][:].data          # Longitude
-    # time = ds.variables['Time']                  # Time dimension (optional)
-    height_levels = ds_latlon.dimensions['bottom_top'].size  # Number of vertical levels
+def load_data(t = 0):
+    # Ice mixing ratio (kg kg-1)
+    ice = netCDF4.Dataset('data/wrf3d_d01_PGW_QICE_200010.nc')
+
+    # Cloud water mixing ratio (kg kg-1)
+    cloud = netCDF4.Dataset('data/wrf3d_d01_PGW_QCLOUD_200010.nc')
+
+    # Graupel mixing ratio (kg kg-1)
+    graupel = netCDF4.Dataset('data/wrf3d_d01_PGW_QGRAUP_200010.nc')
+
+    # Rain water mixing ratio (kg kg-1)
+    rain = netCDF4.Dataset('data/wrf3d_d01_PGW_QRAIN_200010.nc')
+
+    time_to_match = cloud.variables['Times'][t].tobytes().decode('utf-8')
+
+    # Snow mixing ratio (kg kg-1)
+    snow = None
+    for i in range(1, 31):
+        snow_path = f'data/wrf3d_d01_PGW_QSNOW_200010{str(i).zfill(2)}.nc'
+        snow_ds = netCDF4.Dataset(snow_path)
+        for j, times in enumerate(snow_ds.variables['Times']):
+            str_time = times.tobytes().decode('utf-8')
+            if str_time == time_to_match:
+                print(f"Found time match for snow: {snow_path}@{str_time}", )
+                snow = snow_ds.variables['QSNOW'][j, :, :, :]
+
+    # Heights
+    heights = None
+    for i in range(1, 31):
+        height_path = f'data/wrf3d_d01_CTRL_Z_200010{str(i).zfill(2)}.nc'
+        height_ds = netCDF4.Dataset(height_path)
+        for j, times in enumerate(height_ds.variables['Times']):
+            str_time = times.tobytes().decode('utf-8')
+            if str_time == time_to_match:
+                print(f"Found time match for height: {height_path}@{str_time}", )
+                heights = height_ds.variables['Z'][j, :, :, :]
+    
+    start = time.time()
+    output = {
+        'QCLOUD': cloud.variables['QCLOUD'][t, :, :, :].data,
+        'QICE': ice.variables['QICE'][t, :, :, :].data,
+        'QGRAUP': graupel.variables['QGRAUP'][t, :, :, :].data,
+        'QRAIN': rain.variables['QRAIN'][t, :, :, :].data,
+        'QSNOW': snow.data,
+        'HEIGHTS': heights.data
+    }
+    end = time.time()
+    print(f"Time to load data: {end - start}s")
+    return output
+
+
+def calculate_cloud_condensation_3d(latlon, data, state = None):
+    lat = latlon['XLAT']
+    lon = latlon['XLONG']
+    height_levels = latlon['HEIGHT_LEVELS']
+
+    qcloud = data['QCLOUD']
+    qice = data['QICE']
+    qgraup = data['QGRAUP']
+    qrain = data['QRAIN']
+    qsnow = data['QSNOW']
+    heights = data['HEIGHTS']
 
     # Initialize the list to hold the data
     output_data = []
 
-    state_bb = get_state_bb(state)
+    if state:
+        state_bb = get_state_bb(state)
+    else:
+        state_bb = None
 
     for i in range(lat.shape[0] - 1):
         for j in range(lat.shape[1] - 1):
@@ -36,26 +108,51 @@ def get_cloud_mixing_ratio_3d(ds_latlon, ds_qcloud, ds_qice, state, time=39):
                 {"lat": float(lat[i+1, j+1]), "lon": float(lon[i+1, j+1])}
             ]
 
-            if any(
+            if state_bb and any(
                 not is_in_bounds(state_bb, corner['lat'], corner['lon'])
                 for corner in corners_of_box
             ):
                 continue
 
-            cloud_mixing_ratios = []
-            ice_mixing_ratios = []
-            for h in range(0, height_levels):
-                cloud_mixing_ratio = float(qcloud[h, i, j])
-                ice_mixing_ratio = float(qice[h, i, j])
+            # HACK we hate canada
+            if any(corner['lat'] > 49.014322 for corner in corners_of_box):
+                continue
 
-                cloud_mixing_ratios.append(cloud_mixing_ratio)
-                ice_mixing_ratios.append(ice_mixing_ratio)
+            total_condensation = []
+            cell_heights = []
+            for h in range(0, height_levels):
+                cell_qcloud = float(qcloud[h, i, j])
+                cell_qice = float(qice[h, i, j])
+                cell_qgraup = float(qgraup[h, i, j])
+                cell_qrain = float(qrain[h, i, j])
+                cell_qsnow = float(qsnow[h, i, j])
+
+                # Heights are half-levels, so we need to interpolate
+                # to get to the bottom of the cell.
+
+                #    h + 2
+                #
+                #    h + 1  
+                #          |c|
+                #    h
+                cell_height = (heights[h + 1, i, j] - heights[h, i, j]) / 2
+                cell_height += heights[h, i, j]
+                cell_heights.append(float(cell_height))
+
+                total_condensation_in_cell = sum([
+                    cell_qcloud,
+                    cell_qice,
+                    cell_qgraup,
+                    cell_qrain,
+                    cell_qsnow,
+                ])
+                total_condensation.append(total_condensation_in_cell)
     
-            if sum(cloud_mixing_ratios) or sum(ice_mixing_ratios):
+            if sum(total_condensation):
                 output_data.append({
                     "corners_of_box": corners_of_box,
-                    "cloud_mixing_ratios": cloud_mixing_ratios,
-                    'ice_mixing_ratios': ice_mixing_ratios,
+                    "total_condensation": total_condensation,
+                    'cell_heights': cell_heights,
                 })
 
     return output_data
@@ -124,6 +221,11 @@ def find_rainiest_time(ds, state):
 
 
 def write_json(data, suffix):
-    fname = 'cloud_mixing_ratio_' + suffix + '.json'
+    fname = 'cloud_condensation_' + suffix + '.json'
     with open(fname, 'w+') as f:
         json.dump(data, f)
+
+    gzip_fname = fname + '.gz'
+    with open(fname, 'rb') as f_in:
+        with gzip.open(gzip_fname, 'wb') as f_out:
+            f_out.writelines(f_in)

@@ -39,3 +39,24 @@ cat cloud_mixing_ratio_us.json| gzip > cloud_mixing_ratio_us.json.gz
 --
 
 https://towardsdatascience.com/geospatial-indexing-with-quadkeys-d933dff01496
+
+
+
+total condenstate = qice + qcloud + qgraupel + qrain + qsnow
+interpolate across heights, if GPH is > 4km
+take pictures of canvas (maybe using playwright?)
+create a nn lol
+
+
+Z is...
+    - sliced by time
+    - each has 51, which makes sense because they are "half layers"
+    - within a given layer, you have a lat long
+
+z['Z'][t][h][lat][long] (meters)
+
+where h is an index
+
+why does height change over time lol
+
+heights are different between levels, on average 400m

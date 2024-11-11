@@ -26,8 +26,9 @@ const INITIAL_VIEW_STATE: MapViewState = {
   latitude: 39.1,
   longitude: -94.57,
   zoom: 3.8,
+  minPitch: -70,
   maxZoom: 16,
-  pitch: 0,
+  pitch: 90,
   bearing: 0
 };
 
@@ -40,50 +41,48 @@ type Coordinate = {
 
 type GridCellAPI = {
   corners_of_box: [Coordinate, Coordinate, Coordinate, Coordinate];
-  cloud_mixing_ratios: number[];
-  ice_mixing_ratios: number[];
+  total_condensation: number[];
+  cell_heights: number[];
 };
 
 type GridCell = {
   corner: Coordinate;
   height: number;
-  cloud_mixing_ratio: number;
-  ice_mixing_ratio: number;
+  total_condensation: number;
 };
 
 function expandAPICells(boxes: GridCellAPI[]): GridCell[] {
   const expanded: GridCell[] = [];
-  const HEIGHT_SCALE = 4_000;
-
+  const HEIGHT_STEP = 4000;
   let total = 0;
   let nonNull = 0;
   // Expand this so that there's one entity for each height. This
   // is gonna make things slower so maybe don't do this later.
   for (const box of boxes) {
-    for (let i = 0; i < box.cloud_mixing_ratios.length; i++) {
-      const height = i * HEIGHT_SCALE;
-      const cloud_mixing_ratio = box.cloud_mixing_ratios[i];
-      const ice_mixing_ratio = box.ice_mixing_ratios[i];
+    for (let i = 0; i < box.total_condensation.length; i++) {
+      const height = i * HEIGHT_STEP;
+      const total_condensation = box.total_condensation[i];
 
       total++;
 
-      if (cloud_mixing_ratio || ice_mixing_ratio) {
+      if (total_condensation) {
         const newBox = {
           corner: box.corners_of_box[0],
-          cloud_mixing_ratio,
-          ice_mixing_ratio,
+          total_condensation,
           height,
         }
-
-        // if (expanded.length > 1e6) {
-        //   continue;
-        // }
   
         expanded.push(newBox);
         nonNull++;
+        // if (nonNull > 2e6) {
+        //   console.log(expanded);
+        //   return expanded;
+        // }
       }
     }
   }
+  console.log(total, nonNull);
+  console.log(expanded);
   return expanded;
 }
 
@@ -105,7 +104,7 @@ async function fetchGridCells(time, states): Promise<GridCell[]> {
 }
 
 async function fetchEntireUs(): Promise<Record<number, GridCell[]>> {
-  const url = '/cloud_mixing_ratio_us.json.gz';
+  const url = '/cloud_condensation_kansas.json.gz';
   const resp = await fetch(url, { mode: 'cors' })
   const data = await resp.json() as GridCellAPI[];
 
@@ -168,16 +167,12 @@ export function App({
     id: 'SimpleMeshLayer',
     data: gridcells,    
     getColor: (d) => {
-      const max_cloud_mixing = 0.0017;
-      const max_ice_mixing = 0.0013;
+      const max = 0.002;
+      const normalized_cloud = d.total_condensation / max;
 
-      const normalized_cloud = d.cloud_mixing_ratio / max_cloud_mixing;
-      const normalized_ice = d.ice_mixing_ratio / max_ice_mixing;
-
-      const alpha = (normalized_ice + (normalized_cloud * 2)) * 255;
-      const red = normalized_cloud * 255;
-      const blue = normalized_ice * 255;
-      return [red, blue, 140, alpha]
+      const alpha = Math.min(normalized_cloud * 255, 255);
+      // const alpha = 255;
+      return [120, 255, 140, alpha]
     },
     // getOrientation: d => [0, Math.random() * 180, 0],
     getPosition: d => [
@@ -186,7 +181,7 @@ export function App({
       d.height,
     ],
     mesh: cube,
-    sizeScale: 3000,
+    sizeScale: 2000,
     pickable: false,
   });
 
