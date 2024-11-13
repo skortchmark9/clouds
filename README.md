@@ -193,3 +193,17 @@ Do these heights even make sense?
         20383
     ]
 }
+
+
+I have machinery now to screenshot the clouds from whichever angle.
+(although its probably too slow...)
+
+
+cloud fraction profile
+top-down profile
+
+
+100x100 - integrated liquid condensate
+second array - 100x20
+output - 100x100x20
+

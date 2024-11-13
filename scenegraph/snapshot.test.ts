@@ -2,7 +2,7 @@ import { MatchImageSnapshotOptions } from 'jest-image-snapshot';
 import puppeteer, { Browser, Page } from 'puppeteer';
 
 
-jest.setTimeout(10000);
+jest.setTimeout(1e9);
 
 function delay(time) {
     return new Promise(function(resolve) { 
@@ -27,10 +27,37 @@ describe('Google', () => {
     
     it('should be titled.', async () => {
         await page.waitForNetworkIdle();
-        await page.screenshot({ path: 'screenshots/screenshot.png', fullPage: true });
-        await expect(page.title()).resolves.toMatch('deck.gl Example');
-        await page.screenshot({ path: 'screenshots/screenshot.png', fullPage: true });
-        await page.keyboard.press('p');
-        await page.screenshot({ path: 'screenshots/screenshot1.png', fullPage: true });
+
+        const startLong = -99.927038;
+        const endLong = -96.727038
+        const startLat = 37.794000;
+        const endLat = 39.194000;
+        let total = 0;
+
+        for (let i = startLat; i < endLat; i += 0.1) {
+            for (let j = startLong; j < endLong; j += 0.1) {
+                total += 1;
+                let pitch = 0;
+                await page.evaluate((i, j, pitch) => {
+                    // ignore ts error on this lines
+                    // @ts-ignore
+                    window.__goto({ latitude: i, longitude: j, pitch })
+                }, i, j, pitch);
+                await page.screenshot({ path: `screenshots/screenshot_${i.toFixed(5)}_${j.toFixed(5)}@${pitch}.png`, fullPage: true});
+
+                pitch = 90;
+                await page.evaluate((i, j, pitch) => {
+                    // ignore ts error on this lines
+                    // @ts-ignore
+                    window.__goto({ latitude: i, longitude: j, pitch })
+                }, i, j, pitch);
+                await page.screenshot({ path: `screenshots/screenshot_${i.toFixed(5)}_${j.toFixed(5)}@${pitch}.png`, fullPage: true});
+
+                if (total % 10 === 0) {
+                    console.log(`Made ${total} images...`);
+                }
+            }
+        }
+        console.log(total);
     });
 });

@@ -7,8 +7,8 @@
     "start": "vite --open",
     "start-local": "vite --config ../../vite.config.local.mjs",
     "build": "vite build",
-    "test:ui": "set DEBUG=test && jest --runInBand --detectOpenHandles --config=jest-puppeteer.config.js --forceExit",
-    "update:snapshots": "jest --updateSnapshot --config=jest-puppeteer.config.js"
+    "test:ui": "set DEBUG=test && jest --runInBand --detectOpenHandles --forceExit",
+    "update:snapshots": "jest --updateSnapshot"
   },
   "dependencies": {
     "@luma.gl/core": "^9.0.0",
@@ -33,6 +33,7 @@
     "jest-image-snapshot": "^6.4.0",
     "jest-puppeteer": "^10.1.4",
     "puppeteer": "^23.7.1",
+    "ts-jest": "^29.2.5",
     "typescript": "^4.6.0",
     "vite": "^4.0.0"
   }

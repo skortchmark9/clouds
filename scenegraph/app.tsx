@@ -240,41 +240,63 @@ export function App({
   };
 
   const shift = ({left = 0, right = 0, up = 0, down = 0}) => {
-    setViewState(prev => ({
-      ...prev,
-      position: [
-        prev.position[0] - left + right,
-        prev.position[1] + up - down,
-        prev.position[2]
-      ]
-    }));
+    let updated;
+    setViewState((prev) => {
+        updated = {
+          ...prev,
+          latitude: (prev.latitude + up - down),
+          longitude: (prev.longitude - left + right),    
+        };
+        return updated;
+    });
+    return updated;
   };
 
+  const goto = ({latitude, longitude, pitch}) => {
+    setViewState((prev) => ({
+      ...prev,
+      latitude,
+      longitude,
+      pitch
+    }));
+  };
+  window.__goto = goto;
 
   // Listen for the "P" key press to change pitch
   useEffect(() => {
     const handleKeyPress = (event) => {
+      let change = null;
       if (event.key.toLowerCase() === 'p') {
         togglePitch();
       }
       if (event.key === 'ArrowLeft') {
-        shift({left: 4000});
+        change = shift({left: .1});
       }
       if (event.key === 'ArrowRight') {
-        shift({right: 4000});
+        change = shift({right: .1});
       }
       if (event.key === 'ArrowUp') {
-        shift({up: 4000});
+        change = shift({up: .1});
       }
       if (event.key === 'ArrowDown') {
-        shift({down: 4000});
+        change = shift({down: .1});
       }
-
+      if (change) {
+        console.log({
+          latitude: change.latitude.toFixed(6),
+          longitude: change.longitude.toFixed(6),
+          pitch: change.pitch,
+        });
+      }
     };
+
+    window.__handleKeyPress = handleKeyPress;
+
+    console.log('new handler');
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [viewState]);
+  }, []);
 
 
   return (
