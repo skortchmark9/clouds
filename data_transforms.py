@@ -143,7 +143,7 @@ def create_blocks_across_time():
     latlon = load_latlon()
     blocks = []
     start = time.time()
-    for t in range(10, 230):
+    for t in range(10, 12):
         data = load_data(t)
         preprocessed_data = preprocess_data(latlon, data)
         time_str = data['TIME']
