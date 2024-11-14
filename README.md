@@ -202,8 +202,40 @@ I have machinery now to screenshot the clouds from whichever angle.
 cloud fraction profile
 top-down profile
 
+Inputs:
+first array = 100x100 - integrated liquid condensate (summed over heights)
+second array - 20 - summed horizontally over entire gridbox
+    - note heights are not uniform, so do we want to normalize that as well?
 
-100x100 - integrated liquid condensate
-second array - 100x20
+Training: 100x100 at 4km resolution
+3d version
+
 output - 100x100x20
 
+but should the input arrays be normalized to 1km? it will still be 4km blocks
+
+how to deal with the fact that the grid isn't regular.
+
+It will be useful to do a preprocessing step, so we don't have to read from so many files
+
+[h, i, j] = total
+
+Do we need lat/long at all? Maybe we can just use array indexes?
+Cheating a bit since they are not quite 4km blocks...
+
+how bout height? same argument could apply (i.e. just use indices)
+but possibly it is even less regular? especially seems sketchy in
+creating altitude profiles, they won't look right
+
+
+1. preprocess [i, j, h] = total_condensation
+2. create 100km x 100km blocks and sum h
+    - since each grid is 4km x 4km, 25 x 25 (indices)
+    - how many samples from each timestep?
+
+3. from the 100km x 100km blocks sum horizontally to create second array
+    - average height across layer?
+    [(height, condensation)]
+
+
+next step is to figure out normalization. also might want to plot some of these to see how they look. compare to visualization at right lat/longs

@@ -4,6 +4,7 @@ import gzip
 import netCDF4
 from collections import defaultdict, Counter
 import time
+import numpy as np
 
 def load_z():
     path = 'data/wrf3d_d01_CTRL_Z_20001001.nc'
@@ -41,28 +42,26 @@ def load_data(t = 0):
     rain = netCDF4.Dataset('data/wrf3d_d01_PGW_QRAIN_200010.nc')
 
     time_to_match = cloud.variables['Times'][t].tobytes().decode('utf-8')
+    print(time_to_match)
 
-    # Snow mixing ratio (kg kg-1)
-    snow = None
-    for i in range(1, 31):
-        snow_path = f'data/wrf3d_d01_PGW_QSNOW_200010{str(i).zfill(2)}.nc'
-        snow_ds = netCDF4.Dataset(snow_path)
-        for j, times in enumerate(snow_ds.variables['Times']):
-            str_time = times.tobytes().decode('utf-8')
-            if str_time == time_to_match:
-                print(f"Found time match for snow: {snow_path}@{str_time}", )
-                snow = snow_ds.variables['QSNOW'][j, :, :, :]
+    # Snow mixing ratio (kg kg-1) - saved over a file a day vs. a month
+    # so we need to find the file which starts at the right time.
+    def find_daily_data(variable, path):
+        # Snow mixing ratio (kg kg-1) - saved over a file a day vs. a month
+        # so we need to find the file which starts at the right time.
+        for i in range(1, 31):
+            filepath = path + f'_200010{str(i).zfill(2)}.nc'
+            ds = netCDF4.Dataset(filepath)
+            for j, times in enumerate(ds.variables['Times']):
+                str_time = times.tobytes().decode('utf-8')
+                if str_time == time_to_match:
+                    print(f"Found time match for daily: {path}@{str_time}", )
+                    return ds.variables[variable][j, :, :, :]
 
-    # Heights
-    heights = None
-    for i in range(1, 31):
-        height_path = f'data/wrf3d_d01_CTRL_Z_200010{str(i).zfill(2)}.nc'
-        height_ds = netCDF4.Dataset(height_path)
-        for j, times in enumerate(height_ds.variables['Times']):
-            str_time = times.tobytes().decode('utf-8')
-            if str_time == time_to_match:
-                print(f"Found time match for height: {height_path}@{str_time}", )
-                heights = height_ds.variables['Z'][j, :, :, :]
+    snow = find_daily_data('QSNOW', 'data/wrf3d_d01_PGW_QSNOW')
+    heights = find_daily_data('Z', 'data/wrf3d_d01_CTRL_Z')
+
+
     
     start = time.time()
     output = {
@@ -77,6 +76,122 @@ def load_data(t = 0):
     end = time.time()
     print(f"Time to load data for time t={t}: {end - start}s")
     return output
+
+
+def create_100km_blocks(time_str, latlon, preprocessed_data, n_blocks=100):
+    lat = latlon['XLAT']
+    lon = latlon['XLONG']
+    height_levels = latlon['HEIGHT_LEVELS']
+
+    N = lat.shape[0]
+    M = lat.shape[1]
+    block_size = 100 // 4 # (100km / 4 = 25km)
+
+    max_iterations = 1000
+    iterations = 0
+    blocks = []
+    while len(blocks) < n_blocks:
+        iterations += 1
+        if iterations > max_iterations:
+            raise Exception("Could not find enough blocks after 1000 iterations")
+
+        # Ensure top-left corner of the subgrid is within bounds
+        start_x = np.random.randint(0, N - block_size)
+        start_y = np.random.randint(0, M - block_size)
+
+        end_x = start_x + block_size
+        end_y = start_y + block_size
+
+        corners = [
+            {"lat": lat[start_x, start_y], "lon": lon[start_x, start_y], 'indices': [start_x, start_y]},
+            {"lat": lat[end_x, start_y], "lon": lon[end_x, start_y], 'indices': [end_x, start_y]},
+            {"lat": lat[start_x, end_y], "lon": lon[start_x, end_y], 'indices': [start_x, end_y]},
+            {"lat": lat[end_x, end_y], "lon": lon[end_x, end_y], 'indices': [end_x, end_y]},
+        ]
+
+        truth = preprocessed_data[start_x:end_x, start_y:end_y, :]
+
+        top_down = np.sum(truth, axis=2)
+
+        altitude_profile = [
+            np.average(truth[:, :, h])
+            for h in range(height_levels)
+        ]
+        # No clouds at all in this block!
+        if (sum(altitude_profile) == 0):
+            continue
+
+        block = {
+            # Metadata which won't be fed into the model
+            'time': time_str,
+            'corners': corners,
+            # i, j, h - actual condensation values in each cell
+            'truth': truth,
+
+            # 25 x 25 - total water path (integrated over height)
+            'top_down': top_down,
+
+            # For profile within the cell.
+            'altitude_profile': altitude_profile
+        }
+        blocks.append(block)
+
+    return blocks
+
+
+def create_blocks_across_time():
+    latlon = load_latlon()
+    blocks = []
+    start = time.time()
+    for t in range(10, 230):
+        data = load_data(t)
+        preprocessed_data = preprocess_data(latlon, data)
+        time_str = data['TIME']
+        blocks.extend(create_100km_blocks(time_str, latlon, preprocessed_data))
+
+    end = time.time()
+    print(f"Time to create blocks: {end - start}s")
+    return blocks
+
+def preprocess_data(latlon, data):
+    """ """
+    lat = latlon['XLAT']
+    lon = latlon['XLONG']
+    height_levels = latlon['HEIGHT_LEVELS']
+
+    qcloud = data['QCLOUD']
+    qice = data['QICE']
+    qgraup = data['QGRAUP']
+    qrain = data['QRAIN']
+    qsnow = data['QSNOW']
+    heights = data['HEIGHTS']
+    time_str = data['TIME']
+
+    # Initialize the list to hold the data
+    output_data = np.zeros((lat.shape[0], lat.shape[1], height_levels))
+
+    for i in range(lat.shape[0] - 1):
+        for j in range(lat.shape[1] - 1):
+            for h in range(0, height_levels):
+                cell_qcloud = float(qcloud[h, i, j])
+                cell_qice = float(qice[h, i, j])
+                cell_qgraup = float(qgraup[h, i, j])
+                cell_qrain = float(qrain[h, i, j])
+                cell_qsnow = float(qsnow[h, i, j])
+
+                total_condensation_in_cell = sum([
+                    cell_qcloud,
+                    cell_qice,
+                    cell_qgraup,
+                    cell_qrain,
+                    cell_qsnow,
+                ])
+
+                output_data[i, j, h] = total_condensation_in_cell
+
+    return output_data
+
+
 
 
 def calculate_cloud_condensation_3d(latlon, data, state = None):
