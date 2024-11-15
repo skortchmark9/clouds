@@ -4,7 +4,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import layers, models, Input, Model
 
-from plotting import plot_3d
+from plotting import plot_truth_vs_prediction_3d
 
 def create_model(blocks):
     # Input for top_down data (25x25 grid)
@@ -83,5 +83,4 @@ def compare_predictions(model: Model, block):
     # Get ground truth data for comparison
     truth = block['truth']
 
-    plot_3d(prediction)
-    plot_3d(truth)
+    plot_truth_vs_prediction_3d(truth, prediction)

@@ -19,7 +19,7 @@ def plot_altitude_profile(block):
     plt.ylabel("Height Levels")
     plt.show()
 
-def plot_3d(block_3d):
+def plot_3d(block_3d, title='Condensation'):
     # Example data for demonstration
     # Replace `block.truth` with your actual data if available
     # Assuming block.truth has shape (25, 25, 50)
@@ -59,6 +59,51 @@ def plot_3d(block_3d):
     ax.set_ylabel("j dimension")
     ax.set_zlabel("Height dimension (h)")
 
-    plt.title("3D Plot of `block.truth` Values")
+    plt.title(f"3D Plot of {title} Values")
     plt.show()
 
+
+def plot_truth_vs_prediction_3d(truth, prediction):
+    """
+    Plots the truth and prediction 3D data side by side using `plot_3d`.
+    """
+    fig = plt.figure(figsize=(20, 7))  # Adjust figure size for side-by-side plots
+    
+    # Plot Truth
+    ax1 = fig.add_subplot(121, projection='3d')
+    i_dim, j_dim, h_dim = truth.shape
+    i, j, h = np.meshgrid(np.arange(i_dim), np.arange(j_dim), np.arange(h_dim), indexing='ij')
+    truth_values = truth.flatten()
+    i, j, h = i.flatten(), j.flatten(), h.flatten()
+    non_zero_mask = truth_values > 0
+    ax1.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=truth_values[non_zero_mask], cmap='viridis', marker='o')
+    ax1.set_xlim(0, i_dim - 1)
+    ax1.set_ylim(0, j_dim - 1)
+    ax1.set_zlim(0, h_dim - 1)
+    ax1.set_xlabel("i dimension")
+    ax1.set_ylabel("j dimension")
+    ax1.set_zlabel("Height dimension (h)")
+    ax1.set_title("Truth")
+    
+    # Plot Prediction
+    ax2 = fig.add_subplot(122, projection='3d')
+    i_dim, j_dim, h_dim = prediction.shape
+    i, j, h = np.meshgrid(np.arange(i_dim), np.arange(j_dim), np.arange(h_dim), indexing='ij')
+    pred_values = prediction.flatten()
+    i, j, h = i.flatten(), j.flatten(), h.flatten()
+    non_zero_mask = pred_values > 0
+    scatter = ax2.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=pred_values[non_zero_mask], cmap='viridis', marker='o')
+    ax2.set_xlim(0, i_dim - 1)
+    ax2.set_ylim(0, j_dim - 1)
+    ax2.set_zlim(0, h_dim - 1)
+    ax2.set_xlabel("i dimension")
+    ax2.set_ylabel("j dimension")
+    ax2.set_zlabel("Height dimension (h)")
+    ax2.set_title("Prediction")
+
+    # Add a single colorbar between the two plots
+    cbar_ax = fig.add_axes([0.0, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
+    cbar = fig.colorbar(scatter, cax=cbar_ax, label="Condensation Value")
+
+    plt.tight_layout()
+    plt.show()
