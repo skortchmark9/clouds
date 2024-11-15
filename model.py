@@ -2,7 +2,9 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow import keras
-from keras import layers, models, Input
+from keras import layers, models, Input, Model
+
+from plotting import plot_3d
 
 def create_model(blocks):
     # Input for top_down data (25x25 grid)
@@ -63,3 +65,23 @@ def train_model(model, blocks):
         validation_split=0.2  # use 20% of data for validation
     )
     return history
+
+
+def compare_predictions(model: Model, block):
+    # Prepare input data based on the structure of `block`
+    top_down_input = np.expand_dims(block['top_down'], axis=0)  # Add batch dimension
+    altitude_profile_input = np.expand_dims(block['altitude_profile'], axis=0)  # Add batch dimension
+
+    inputs = {
+        'top_down': top_down_input,
+        'altitude_profile': altitude_profile_input
+    }
+
+    # Run model prediction
+    prediction = model.predict(inputs)[0]  # Remove batch dimension from prediction
+
+    # Get ground truth data for comparison
+    truth = block['truth']
+
+    plot_3d(prediction)
+    plot_3d(truth)

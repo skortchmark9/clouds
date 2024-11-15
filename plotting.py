@@ -19,16 +19,15 @@ def plot_altitude_profile(block):
     plt.ylabel("Height Levels")
     plt.show()
 
-def plot_truth(block):
+def plot_3d(block_3d):
     # Example data for demonstration
     # Replace `block.truth` with your actual data if available
     # Assuming block.truth has shape (25, 25, 50)
-    truth = block['truth']  # Replace with block.truth
-    i_dim, j_dim, h_dim = truth.shape
+    i_dim, j_dim, h_dim = block_3d.shape
 
     # Prepare the data for plotting
     i, j, h = np.meshgrid(np.arange(i_dim), np.arange(j_dim), np.arange(h_dim), indexing='ij')
-    values = truth.flatten()  # Flatten the truth array for color mapping
+    values = block_3d.flatten()  # Flatten the truth array for color mapping
 
     # Flatten the coordinates for 3D scatter plot
     i = i.flatten()
