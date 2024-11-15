@@ -5,3 +5,4 @@ scenegraph/node_modules
 __pycache__
 *.json
 *.json.gz
+blocks

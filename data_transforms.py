@@ -1,3 +1,4 @@
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import json
 import gzip
@@ -139,60 +140,60 @@ def create_100km_blocks(time_str, latlon, preprocessed_data, n_blocks=100):
     return blocks
 
 
+def create_time_block(latlon, t):
+    print('wut')
+    start_block = time.time()
+    data = load_data(t)
+    preprocessed_data = sum_condensation(data)
+    time_str = data['TIME']
+    blocks = create_100km_blocks(time_str, latlon, preprocessed_data)
+    write_blocks(t, blocks)
+    end_block = time.time()
+    print(f"Time to create blocks for t={t}: {end_block - start_block}s")
+
 def create_blocks_across_time():
     latlon = load_latlon()
-    blocks = []
     start = time.time()
-    for t in range(10, 12):
-        data = load_data(t)
-        preprocessed_data = preprocess_data(latlon, data)
-        time_str = data['TIME']
-        blocks.extend(create_100km_blocks(time_str, latlon, preprocessed_data))
+
+    # Define the range of time steps
+    time_steps = range(1, 230)
+
+    with ProcessPoolExecutor() as executor:
+        # Submit tasks
+        futures = {executor.submit(create_time_block, latlon, t): t for t in time_steps}
+        
+        for future in as_completed(futures):
+            t = futures[future]
+            try:
+                # Retrieve result to trigger any exceptions raised in the worker
+                future.result()
+                print(f"Time step {t} completed successfully.")
+            except Exception as e:
+                print(f"Error in time step {t}: {e}")
 
     end = time.time()
-    print(f"Time to create blocks: {end - start}s")
-    return blocks
+    print(f"Time to create all blocks: {end - start}s")
 
-def preprocess_data(latlon, data):
+def sum_condensation(data):
     """ """
-    lat = latlon['XLAT']
-    lon = latlon['XLONG']
-    height_levels = latlon['HEIGHT_LEVELS']
-
     qcloud = data['QCLOUD']
     qice = data['QICE']
     qgraup = data['QGRAUP']
     qrain = data['QRAIN']
     qsnow = data['QSNOW']
-    heights = data['HEIGHTS']
-    time_str = data['TIME']
 
-    # Initialize the list to hold the data
-    output_data = np.zeros((lat.shape[0], lat.shape[1], height_levels))
+    # Vectorized summation in (h, i, j) order
+    vectorized_data = qcloud + qice + qgraup + qrain + qsnow
 
-    for i in range(lat.shape[0] - 1):
-        for j in range(lat.shape[1] - 1):
-            for h in range(0, height_levels):
-                cell_qcloud = float(qcloud[h, i, j])
-                cell_qice = float(qice[h, i, j])
-                cell_qgraup = float(qgraup[h, i, j])
-                cell_qrain = float(qrain[h, i, j])
-                cell_qsnow = float(qsnow[h, i, j])
+    # Transpose the final output to (i, j, h)
+    vectorized_data = vectorized_data.transpose(1, 2, 0)
+    return vectorized_data
 
-                total_condensation_in_cell = sum([
-                    cell_qcloud,
-                    cell_qice,
-                    cell_qgraup,
-                    cell_qrain,
-                    cell_qsnow,
-                ])
-
-                output_data[i, j, h] = total_condensation_in_cell
-
-    return output_data
-
-
-
+def load_all_blocks_from_disk():
+    blocks = []
+    for t in range(1, 230):
+        blocks.extend(read_blocks(t))
+    return blocks
 
 def calculate_cloud_condensation_3d(latlon, data, state = None):
     lat = latlon['XLAT']
@@ -331,6 +332,14 @@ def find_rainiest_time(state):
 
     return c
 
+
+def write_blocks(t, blocks):
+    fname = f'blocks/100_blocks_at_t={t}.npz'
+    np.savez_compressed(fname, blocks)
+
+def read_blocks(t):
+    fname = f'blocks/100_blocks_at_t={t}.npz'
+    return np.load(fname, allow_pickle=True)['arr_0']
 
 def write_json(data, suffix):
     fname = 'cloud_condensation_' + suffix + '.json'
