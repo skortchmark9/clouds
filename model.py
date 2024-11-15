@@ -83,4 +83,6 @@ def compare_predictions(model: Model, block):
     # Get ground truth data for comparison
     truth = block['truth']
 
-    plot_truth_vs_prediction_3d(truth, prediction)
+    MAX_VALUE = np.float32(0.021897616)
+    # Denormalize the data if necessary
+    plot_truth_vs_prediction_3d(truth * MAX_VALUE, prediction * MAX_VALUE)

@@ -7,6 +7,8 @@ from collections import defaultdict, Counter
 import time
 import numpy as np
 
+MAX_VALUE = np.float32(0.021897616)
+
 def load_z():
     path = 'data/wrf3d_d01_CTRL_Z_20001001.nc'
     return netCDF4.Dataset(path)
@@ -80,6 +82,8 @@ def load_data(t = 0):
 
 
 def create_100km_blocks(time_str, latlon, preprocessed_data, n_blocks=100):
+    # Max value for normalization, determined by the max value in the dataset
+    max_value = MAX_VALUE
     lat = latlon['XLAT']
     lon = latlon['XLONG']
     height_levels = latlon['HEIGHT_LEVELS']
@@ -111,11 +115,12 @@ def create_100km_blocks(time_str, latlon, preprocessed_data, n_blocks=100):
         ]
 
         truth = preprocessed_data[start_x:end_x, start_y:end_y, :]
+        truth_normalized = truth / max_value
 
-        top_down = np.sum(truth, axis=2)
+        top_down = np.sum(truth_normalized, axis=2)
 
         altitude_profile = [
-            np.average(truth[:, :, h])
+            np.average(truth_normalized[:, :, h])
             for h in range(height_levels)
         ]
         # No clouds at all in this block!
@@ -127,7 +132,7 @@ def create_100km_blocks(time_str, latlon, preprocessed_data, n_blocks=100):
             'time': time_str,
             'corners': corners,
             # i, j, h - actual condensation values in each cell
-            'truth': truth,
+            'truth': truth_normalized,
 
             # 25 x 25 - total water path (integrated over height)
             'top_down': top_down,
@@ -141,7 +146,6 @@ def create_100km_blocks(time_str, latlon, preprocessed_data, n_blocks=100):
 
 
 def create_time_block(latlon, t):
-    print('wut')
     start_block = time.time()
     data = load_data(t)
     preprocessed_data = sum_condensation(data)
