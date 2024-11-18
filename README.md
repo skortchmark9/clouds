@@ -1,3 +1,21 @@
+## Instructions ##
+* download & unzip [blocks.zip](https://drive.google.com/file/d/1e5AyvAOslVbmf5kNtYhyBSq08OmJDMdt/view?usp=drive_link)
+* load blocks, create & train model, plot results using `histogram_predictions` and `plot_block_with_prediction`
+
+```
+# loads ~40k blocks
+blocks = load_all_blocks_from_disk()
+
+# create and train model, takes around 10m for 10 epochs
+m = create_model(blocks)
+h = train_model(m, blocks)
+
+# plot inputs vs. truth & prediction
+plot_block_with_prediction(m, random.choice(blocks))
+```
+
+
+
 * entire dataset is 192 TB!
 * needing to understand different conventions: half layers, full layers, surface layers
 * datasets separated by params
