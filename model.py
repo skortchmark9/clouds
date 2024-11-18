@@ -9,35 +9,10 @@ from keras.models import load_model
 from data_transforms import load_all_blocks_from_disk
 from plotting import plot_block_with_prediction
 import matplotlib.pyplot as plt
+from loss import weighted_loss_with_layerwise_sum_constraint, layerwise_sum_error
 
 MAX_VALUE = np.float32(0.021897616)
 
-
-def weighted_loss(y_true, y_pred):
-    """
-    Weighted loss function that penalizes errors in irrelevant height levels (z dimension).
-    Args:
-        y_true: Ground truth tensor of shape (batch_size, i, j, h).
-        y_pred: Predicted tensor of shape (batch_size, i, j, h).
-    Returns:
-        Weighted mean squared error loss.
-    """
-    # Sum over i, j dimensions to compute total condensation per height level
-    truth_altitude_profile = tf.reduce_sum(y_true, axis=(1, 2), keepdims=True)  # Shape: (batch_size, 1, 1, h)
-
-    # Create a weight mask: Penalize layers where the altitude profile is zero
-    weight = tf.where(truth_altitude_profile > 0, 1.0, 5.0)  # Adjust penalty factor as needed
-
-    # Compute the levelized loss
-
-    # Compute the Mean Squared Error (MSE) loss
-    mse_loss = tf.square(y_true - y_pred)
-
-    # Apply weights to the MSE loss
-    weighted_mse = weight * mse_loss
-
-    # Return the average loss across all dimensions
-    return tf.reduce_mean(weighted_mse)
 
 
 
@@ -76,6 +51,7 @@ def create_model(blocks):
 
     # Constrain the output using the altitude profile
     # constrained_output = layers.Multiply()([output_reshaped, altitude_profile_expanded])
+    
 
     # Define the model
     model = models.Model(inputs={
@@ -84,11 +60,11 @@ def create_model(blocks):
     }, outputs=output_reshaped)
 
     # Compile the model
-    model.compile(optimizer='adam', loss=weighted_loss, metrics=['mae'])
+    model.compile(optimizer='adam', loss=weighted_loss_with_layerwise_sum_constraint, metrics=['mae', layerwise_sum_error])
     return model
 
 
-def train_model(model, blocks):
+def train_model(model, blocks, epochs=10):
     top_down_data = np.array([block['top_down'] for block in blocks])  # Shape: (num_blocks, 25, 25)
     profile_data = np.array([block['altitude_profile'] for block in blocks])  # Shape: (num_blocks, num_height_levels)
     truth_data = np.array([block['truth'] for block in blocks])  # Shape: (num_blocks, 25, 25, num_height_levels)
@@ -105,7 +81,7 @@ def train_model(model, blocks):
     history = model.fit(
         inputs,
         truth_data,  # target
-        epochs=4,  # adjust epochs as needed
+        epochs=epochs,  # adjust epochs as needed
         batch_size=20,  # adjust batch size as needed
         validation_split=0.2  # use 20% of data for validation
     )

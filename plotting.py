@@ -80,9 +80,11 @@ def plot_block_with_prediction(model, block):
         'top_down': np.expand_dims(top_down, axis=0),
         'altitude_profile': np.expand_dims(altitude_profile, axis=0)
     }
-
     # Predict the 3D grid
     prediction = model.predict(inputs)[0]  # Remove batch dimension
+    print(block['time'])
+    print(np.sum(truth), np.sum(prediction))
+
 
     # Prepare the figure
     fig = plt.figure(figsize=(12, 8))  # Smaller figure size
