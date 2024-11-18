@@ -83,7 +83,7 @@ def plot_block_with_prediction(model, block):
     # Predict the 3D grid
     prediction = model.predict(inputs)[0]  # Remove batch dimension
     print(block['time'])
-    print(np.sum(truth), np.sum(prediction))
+    print('truth', np.sum(truth), 'pred', np.sum(prediction))
 
 
     # Prepare the figure

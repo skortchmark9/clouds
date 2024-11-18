@@ -14,6 +14,65 @@ from loss import weighted_loss_with_layerwise_sum_constraint, layerwise_sum_erro
 MAX_VALUE = np.float32(0.021897616)
 
 
+def simple_multiply_model(blocks):
+    # Get height dimension from example block
+    h_dim = len(blocks[0]['altitude_profile'])
+
+    # Input for top-down data (25x25 grid)
+    top_down_input = Input(shape=(25, 25), name='top_down')
+
+    # Input for altitude profile (1D array of height-level condensation values)
+    profile_input = Input(shape=(h_dim,), name='altitude_profile')
+
+    # Expand dimensions of the altitude profile
+    altitude_profile_expanded = layers.Lambda(
+        lambda x: tf.expand_dims(tf.expand_dims(x, axis=0), axis=0),
+        output_shape=(1, 1, h_dim)
+    )(profile_input)
+
+    # Broadcast altitude profile to match top-down input's spatial dimensions
+    altitude_profile_broadcasted = layers.Lambda(
+        lambda x: tf.tile(x, [tf.shape(x)[0], 25, 25, 1]),  # Include batch dimension
+        output_shape=(25, 25, h_dim)
+    )(altitude_profile_expanded)
+
+    # Multiply altitude profile with top-down input
+    top_down_expanded = layers.Lambda(lambda x: tf.expand_dims(x, axis=-1))(top_down_input)
+    output = layers.Multiply()([top_down_expanded, altitude_profile_broadcasted])
+
+    # Renormalize so that the sum of the output matches the sum of the top-down input
+    output_sum = layers.Lambda(
+        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
+        output_shape=(1,)
+    )(output)
+
+    # Compute the sum of the top-down input
+    top_down_sum = layers.Lambda(
+        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
+        output_shape=(1,)
+    )(top_down_expanded)
+
+    # Renormalize the output
+    output_renormalized = layers.Lambda(
+        lambda x: x[0] / (x[1] + 1e-8) * x[2],
+        output_shape=(25, 25, h_dim)
+    )([output, output_sum, top_down_sum])
+
+
+
+    # Define the model
+    model = models.Model(inputs={
+        'top_down': top_down_input,
+        'altitude_profile': profile_input,
+    }, outputs=output_renormalized)
+
+    # Compile the model (no training necessary for this test)
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+    return model
+
+
+
 
 
 def create_model(blocks):
