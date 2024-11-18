@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
+import random
 
 def plot_top_down(block):
     data = block['top_down']
@@ -62,6 +63,11 @@ def plot_3d(block_3d, title='Condensation'):
     plt.title(f"3D Plot of {title} Values")
     plt.show()
 
+
+def pick(blocks):
+    idx = random.randint(0, len(blocks) - 1)
+    print('block idx', idx)
+    return blocks[idx]
 
 def plot_block_with_prediction(model, block):
     """
