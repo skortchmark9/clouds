@@ -63,47 +63,81 @@ def plot_3d(block_3d, title='Condensation'):
     plt.show()
 
 
-def plot_truth_vs_prediction_3d(truth, prediction):
+def plot_block_with_prediction(model, block):
     """
-    Plots the truth and prediction 3D data side by side using `plot_3d`.
+    Plots the inputs and 3D truth/prediction for a given block.
+    Args:
+        model: The trained model.
+        block: A dictionary containing the block's data (truth, top_down, altitude_profile).
     """
-    fig = plt.figure(figsize=(20, 7))  # Adjust figure size for side-by-side plots
-    
-    # Plot Truth
-    ax1 = fig.add_subplot(121, projection='3d')
+    # Extract inputs and truth from the block
+    top_down = block['top_down']
+    altitude_profile = block['altitude_profile']
+    truth = block['truth']
+
+    # Prepare inputs for the model
+    inputs = {
+        'top_down': np.expand_dims(top_down, axis=0),
+        'altitude_profile': np.expand_dims(altitude_profile, axis=0)
+    }
+
+    # Predict the 3D grid
+    prediction = model.predict(inputs)[0]  # Remove batch dimension
+
+    # Prepare the figure
+    fig = plt.figure(figsize=(12, 8))  # Smaller figure size
+    # fig = plt.figure(figsize=(16, 12))  # Adjust figure size
+
+    # Plot the top-down input
+    ax1 = fig.add_subplot(221)
+    im1 = ax1.imshow(top_down, cmap='viridis')
+    ax1.set_title("Top-Down Input")
+    fig.colorbar(im1, ax=ax1)
+
+    # Plot the altitude profile input
+    ax2 = fig.add_subplot(222)
+    levels = np.arange(len(altitude_profile))
+    ax2.plot(altitude_profile, levels, label="Altitude Profile")
+    # ax2.invert_yaxis()  # Invert for altitude display
+    ax2.set_xlabel("Condensation Value")
+    ax2.set_ylabel("Height Levels")
+    ax2.set_title("Altitude Profile Input")
+    ax2.legend()
+
+    # Plot the truth 3D grid
+    ax3 = fig.add_subplot(223, projection='3d')
     i_dim, j_dim, h_dim = truth.shape
     i, j, h = np.meshgrid(np.arange(i_dim), np.arange(j_dim), np.arange(h_dim), indexing='ij')
     truth_values = truth.flatten()
     i, j, h = i.flatten(), j.flatten(), h.flatten()
     non_zero_mask = truth_values > 0
-    ax1.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=truth_values[non_zero_mask], cmap='viridis', marker='o')
-    ax1.set_xlim(0, i_dim - 1)
-    ax1.set_ylim(0, j_dim - 1)
-    ax1.set_zlim(0, h_dim - 1)
-    ax1.set_xlabel("i dimension")
-    ax1.set_ylabel("j dimension")
-    ax1.set_zlabel("Height dimension (h)")
-    ax1.set_title("Truth")
-    
-    # Plot Prediction
-    ax2 = fig.add_subplot(122, projection='3d')
+    ax3.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=truth_values[non_zero_mask], cmap='viridis', marker='o')
+    ax3.set_xlim(0, i_dim - 1)
+    ax3.set_ylim(0, j_dim - 1)
+    ax3.set_zlim(0, h_dim - 1)
+    ax3.set_xlabel("i dimension")
+    ax3.set_ylabel("j dimension")
+    ax3.set_zlabel("Height dimension (h)")
+    ax3.set_title("3D Truth")
+
+    # Plot the predicted 3D grid
+    ax4 = fig.add_subplot(224, projection='3d')
     i_dim, j_dim, h_dim = prediction.shape
     i, j, h = np.meshgrid(np.arange(i_dim), np.arange(j_dim), np.arange(h_dim), indexing='ij')
+    i = i.flatten()
+    j = j.flatten()
+    h = h.flatten()
     pred_values = prediction.flatten()
-    i, j, h = i.flatten(), j.flatten(), h.flatten()
     non_zero_mask = pred_values > 0
-    scatter = ax2.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=pred_values[non_zero_mask], cmap='viridis', marker='o')
-    ax2.set_xlim(0, i_dim - 1)
-    ax2.set_ylim(0, j_dim - 1)
-    ax2.set_zlim(0, h_dim - 1)
-    ax2.set_xlabel("i dimension")
-    ax2.set_ylabel("j dimension")
-    ax2.set_zlabel("Height dimension (h)")
-    ax2.set_title("Prediction")
-
-    # Add a single colorbar between the two plots
-    cbar_ax = fig.add_axes([0.0, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
-    cbar = fig.colorbar(scatter, cax=cbar_ax, label="Condensation Value")
-
+    ax4.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=pred_values[non_zero_mask], cmap='viridis', marker='o')
+    ax4.set_xlim(0, i_dim - 1)
+    ax4.set_ylim(0, j_dim - 1)
+    ax4.set_zlim(0, h_dim - 1)
+    ax4.set_xlabel("i dimension")
+    ax4.set_ylabel("j dimension")
+    ax4.set_zlabel("Height dimension (h)")
+    ax4.set_title("3D Prediction")
+    # Adjust layout for better visualization
     plt.tight_layout()
     plt.show()
+

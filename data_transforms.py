@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import json
@@ -32,17 +33,25 @@ def load_latlon():
     return output
 
 def load_data(t = 0):
+    # HACK
+    if t > 478:
+        raise Exception('Go download more data')
+    month = 10
+    times_in_month = 239
+    if t > times_in_month:
+        month = 11
+        t = t - times_in_month
     # Ice mixing ratio (kg kg-1)
-    ice = netCDF4.Dataset('data/wrf3d_d01_PGW_QICE_200010.nc')
+    ice = netCDF4.Dataset(f'data/wrf3d_d01_PGW_QICE_2000{month}.nc')
 
     # Cloud water mixing ratio (kg kg-1)
-    cloud = netCDF4.Dataset('data/wrf3d_d01_PGW_QCLOUD_200010.nc')
+    cloud = netCDF4.Dataset(f'data/wrf3d_d01_PGW_QCLOUD_2000{month}.nc')
 
     # Graupel mixing ratio (kg kg-1)
-    graupel = netCDF4.Dataset('data/wrf3d_d01_PGW_QGRAUP_200010.nc')
+    graupel = netCDF4.Dataset(f'data/wrf3d_d01_PGW_QGRAUP_2000{month}.nc')
 
     # Rain water mixing ratio (kg kg-1)
-    rain = netCDF4.Dataset('data/wrf3d_d01_PGW_QRAIN_200010.nc')
+    rain = netCDF4.Dataset(f'data/wrf3d_d01_PGW_QRAIN_2000{month}.nc')
 
     time_to_match = cloud.variables['Times'][t].tobytes().decode('utf-8')
     print(time_to_match)
@@ -53,7 +62,7 @@ def load_data(t = 0):
         # Snow mixing ratio (kg kg-1) - saved over a file a day vs. a month
         # so we need to find the file which starts at the right time.
         for i in range(1, 31):
-            filepath = path + f'_200010{str(i).zfill(2)}.nc'
+            filepath = path + f'_2000{month}{str(i).zfill(2)}.nc'
             ds = netCDF4.Dataset(filepath)
             for j, times in enumerate(ds.variables['Times']):
                 str_time = times.tobytes().decode('utf-8')
@@ -151,7 +160,7 @@ def create_time_block(latlon, t):
     preprocessed_data = sum_condensation(data)
     time_str = data['TIME']
     blocks = create_100km_blocks(time_str, latlon, preprocessed_data)
-    write_blocks(t, blocks)
+    write_blocks(time_str, blocks)
     end_block = time.time()
     print(f"Time to create blocks for t={t}: {end_block - start_block}s")
 
@@ -160,7 +169,7 @@ def create_blocks_across_time():
     start = time.time()
 
     # Define the range of time steps
-    time_steps = range(1, 230)
+    time_steps = range(1, 478)
 
     with ProcessPoolExecutor() as executor:
         # Submit tasks
@@ -193,10 +202,18 @@ def sum_condensation(data):
     vectorized_data = vectorized_data.transpose(1, 2, 0)
     return vectorized_data
 
+
 def load_all_blocks_from_disk():
     blocks = []
-    for t in range(1, 230):
-        blocks.extend(read_blocks(t))
+    old = False
+    n_blocks = 230 if old else 478
+    for t in range(1, 478):
+        if old:
+            fname = f'blocks_old/100_blocks_at_t={t}.npz'
+            blocks.extend(np.load(fname, allow_pickle=True)['arr_0'])
+        else:
+            time_str = create_time_str(t)
+            blocks.extend(read_blocks(time_str))
     return blocks
 
 def calculate_cloud_condensation_3d(latlon, data, state = None):
@@ -323,6 +340,11 @@ def find_lat_lngs_in_bounds(ds, bounds):
             yield (i, j)
 
 
+def create_time_str(t):
+    base_time = pd.Timestamp('2000-10-01 00:00:00')
+    time_offset = pd.Timedelta(hours=t * 3)
+    return (base_time + time_offset).strftime('%Y-%m-%d_%H:%M:%S')
+
 def find_rainiest_time(state):
     latlon = load_latlon()
     c = Counter()
@@ -337,13 +359,17 @@ def find_rainiest_time(state):
     return c
 
 
-def write_blocks(t, blocks):
-    fname = f'blocks/100_blocks_at_t={t}.npz'
+def write_blocks(time_str, blocks):
+    fname = f'blocks/100_blocks@{time_str}.npz'
     np.savez_compressed(fname, blocks)
 
-def read_blocks(t):
-    fname = f'blocks/100_blocks_at_t={t}.npz'
-    return np.load(fname, allow_pickle=True)['arr_0']
+def read_blocks(time_str):
+    fname = f'blocks/100_blocks@{time_str}.npz'
+    if os.path.exists(fname):
+        return np.load(fname, allow_pickle=True)['arr_0']
+    else:
+        print(f"Could not find block {fname}")
+    return []
 
 def write_json(data, suffix):
     fname = 'cloud_condensation_' + suffix + '.json'
