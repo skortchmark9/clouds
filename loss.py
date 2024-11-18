@@ -11,9 +11,11 @@ def weighted_loss_with_layerwise_sum_constraint(y_true, y_pred):
     # Weighted MSE loss
     mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
 
-    layer_error = 2 * layerwise_sum_error(y_true, y_pred)
+    # Make sums match across heights
+    layer_error = 0.5 * layerwise_sum_error(y_true, y_pred)
 
-    field__sum_error = 1 * tf.reduce_mean(tf.abs(tf.reduce_sum(y_true, axis=[1, 2]) - tf.reduce_sum(y_pred, axis=[1, 2])))
+    # Make sums match across total
+    field__sum_error = 0.25 * tf.reduce_mean(tf.abs(tf.reduce_sum(y_true) - tf.reduce_sum(y_pred)))
 
     # Combine the two losses with a weighting factor
     total_loss = mse_loss + field__sum_error + layer_error

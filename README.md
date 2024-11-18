@@ -239,3 +239,12 @@ creating altitude profiles, they won't look right
 
 
 next step is to figure out normalization. also might want to plot some of these to see how they look. compare to visualization at right lat/longs
+
+************************
+
+stuff I want to try:
+* make the sum of the arrays match
+* make the layerwise sums of the arrays match
+* larger sheets of low condensation inputs
+* should resemble neighboring blocks
+* clusters w/gradients

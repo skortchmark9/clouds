@@ -60,7 +60,7 @@ def create_model(blocks):
     }, outputs=output_reshaped)
 
     # Compile the model
-    model.compile(optimizer='adam', loss=weighted_loss_with_layerwise_sum_constraint, metrics=['mae', layerwise_sum_error])
+    model.compile(optimizer='adam', loss=[weighted_loss_with_layerwise_sum_constraint], metrics=['mae', 'mse', layerwise_sum_error])
     return model
 
 
@@ -123,7 +123,6 @@ def histogram_predictions(model: Model, blocks):
     plt.legend()
     plt.title('Distribution of Truth vs Predictions')
     plt.show()
-    return predictions
 
 
 
