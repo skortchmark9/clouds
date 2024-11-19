@@ -69,13 +69,21 @@ def pick(blocks):
     print('block idx', idx)
     return blocks[idx]
 
-def plot_block_with_prediction(model, block):
+def plot_block_with_prediction(model, block_or_blocks):
     """
     Plots the inputs and 3D truth/prediction for a given block.
     Args:
         model: The trained model.
         block: A dictionary containing the block's data (truth, top_down, altitude_profile).
     """
+    if isinstance(block_or_blocks, list):
+        idx = random.randint(0, len(block_or_blocks) - 1)
+        block = block_or_blocks[idx]
+    else:
+        block = block_or_blocks
+        idx = -1
+
+
     # Extract inputs and truth from the block
     top_down = block['top_down']
     altitude_profile = block['altitude_profile']
@@ -126,7 +134,7 @@ def plot_block_with_prediction(model, block):
     ax3.set_xlabel("i dimension")
     ax3.set_ylabel("j dimension")
     ax3.set_zlabel("Height dimension (h)")
-    ax3.set_title("3D Truth")
+    ax3.set_title(f"3D Truth of Block {idx}")
 
     # Plot the predicted 3D grid
     ax4 = fig.add_subplot(224, projection='3d')
@@ -144,7 +152,7 @@ def plot_block_with_prediction(model, block):
     ax4.set_xlabel("i dimension")
     ax4.set_ylabel("j dimension")
     ax4.set_zlabel("Height dimension (h)")
-    ax4.set_title("3D Prediction")
+    ax4.set_title(f"3D Prediction of Block {idx}")
     # Adjust layout for better visualization
     plt.tight_layout()
     plt.show()
