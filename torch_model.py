@@ -9,14 +9,13 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import random
 
-
 # Define the VAE model
 class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
         
         # Encoder: Combine both inputs
-        self.encoder_fc1 = nn.Linear(25*25 + 50*1, 512)
+        self.encoder_fc1 = nn.Linear(25*25*50, 512)
         self.encoder_fc2 = nn.Linear(512, 128)
         self.fc_mu = nn.Linear(128, 64)
         self.fc_logvar = nn.Linear(128, 64)
@@ -44,11 +43,14 @@ class VAE(nn.Module):
         h5 = torch.sigmoid(self.decoder_fc3(h4))
         return h5.view(-1, 25, 25, 50)
 
-    def forward(self, top_down, side_view):
-        # Flatten inputs and concatenate
-        top_down_flat = top_down.view(top_down.size(0), -1)
-        side_view_flat = side_view.view(side_view.size(0), -1)
-        x = torch.cat([top_down_flat, side_view_flat], dim=1)
+    def forward(self, top_down, altitude_profile):
+        # Element-wise multiplication to create the 3D projection
+        altitude_profile_reshaped = altitude_profile.unsqueeze(2).unsqueeze(3)  # Shape: (batch_size, num_height_levels, 1, 1)
+        altitude_profile_reshaped = altitude_profile_reshaped.permute(0, 2, 3, 1)  # Move height dimension last
+        projection = top_down.unsqueeze(-1) * altitude_profile_reshaped  # Shape: (batch_size, 25, 25, num_height_levels)
+
+        # Flatten projection for encoder
+        x = projection.view(projection.size(0), -1)
 
         # Encode to latent space
         mu, logvar = self.encode(x)
@@ -58,17 +60,25 @@ class VAE(nn.Module):
         recon_x = self.decode(z)
         return recon_x, mu, logvar
 
+
+
 # Define loss function
 def vae_loss(recon_x, x, mu, logvar):
     recon_loss = F.mse_loss(recon_x, x, reduction='sum')
     kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     return recon_loss + kl_div
 
-def create_and_train_model(blocks):
+
+def create_tensors():
+    blocks = load_all_blocks_from_disk()
+    top_down_input = torch.tensor(np.array([block['top_down'] for block in blocks]))  # Shape: (num_blocks, 25, 25)
+    side_view_input = torch.tensor(np.array([block['altitude_profile'] for block in blocks]))  # Shape: (num_blocks, num_height_levels)
+    output_data = torch.tensor(np.array([block['truth'] for block in blocks]))  # Shape: (num_blocks, 25, 25, num_height_levels)
+    return top_down_input, side_view_input, output_data
+
+def create_and_train_model(tensors):
+    top_down_input, side_view_input, output_data = tensors
     # Generate random input and output data for testing
-    top_down_input = torch.tensor([block['top_down'] for block in blocks])  # Shape: (num_blocks, 25, 25)
-    side_view_input = torch.tensor([block['altitude_profile'] for block in blocks])  # Shape: (num_blocks, num_height_levels)
-    output_data = torch.tensor([block['truth'] for block in blocks])  # Shape: (num_blocks, 25, 25, num_height_levels)
 
     batch_size = 64
     # top_down_input = torch.rand(batch_size, 25, 25)  # Shape [25, 25]
@@ -87,7 +97,7 @@ def create_and_train_model(blocks):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # Training loop
-    num_epochs = 10
+    num_epochs = 2
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0
@@ -114,7 +124,7 @@ def plot_block_with_prediction(model, block):
     """
     # Extract inputs and truth from the block
     top_down = torch.tensor(block['top_down']).unsqueeze(0)
-    altitude_profile = torch.tensor(block['altitude_profile']).unsqueeze(1).unsqueeze(0)
+    altitude_profile = torch.tensor(block['altitude_profile']).unsqueeze(0)
     truth = block['truth']
     print(top_down.shape, altitude_profile.shape, truth.shape)
 
