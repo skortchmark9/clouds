@@ -168,17 +168,29 @@ def simple_multiply_model(blocks):
 
     # Apply Conv3D for feature extraction
     conv3d_output = layers.Conv3D(
-        filters=16, kernel_size=(3, 3, 3), activation='relu', padding='same', name='conv3d_feature_extraction'
-    )(output_mult_expanded)  # Shape: (batch_size, 50, 25, 25, 16)
+        filters=16, kernel_size=(3, 3, 3), activation='relu', padding='same', name='conv3d_feature_extraction',
+    )(output_mult_expanded)  # Shape: (batch_size, 48, 23, 23, 16)
 
     # Reduce to a single channel for condensate levels
-    single_channel = layers.Conv3D(
+    conv3d_single_channel = layers.Conv3D(
         filters=1, kernel_size=(3, 3, 3), activation='relu', padding='same', name='conv3d_output'
     )(conv3d_output)  # Shape: (batch_size, 50, 25, 25, 1)
+    print(conv3d_single_channel.shape)
+
+    # Crop walls
+    # conv3d_cropped = layers.Cropping3D(
+    #     cropping=((1, 1), (1, 1), (1, 1)), name="conv3d_cropped"
+    # )(conv3d_single_channel)  # Shape: (batch_size, 23, 23, 48)
+
+    # Pad the second Conv3D layer output to match `output_mult`
+    conv3d_uncropped = layers.ZeroPadding3D(
+        padding=((1, 1), (1, 1), (1, 1)), name="conv3d_uncropped"
+    )(conv3d_single_channel)  # Shape: (batch_size, 50, 25, 25, 1)
+
 
     conv_output = layers.Lambda(
         lambda x: tf.squeeze(x, axis=-1), name='squeeze_final_output'
-    )(single_channel)  # Shape: (batch_size, 50, 25, 25)
+    )(conv3d_single_channel)  # Shape: (batch_size, 50, 25, 25)
 
     # Compute the sum of the top-down input
     top_down_sum = layers.Lambda(
@@ -205,8 +217,8 @@ def simple_multiply_model(blocks):
 
 
     output = layers.Add()([
-        layers.Lambda(lambda x: x * 1.0)(conv_output_renormalized),
-        layers.Lambda(lambda x: x * 0.0)(output_mult)
+        layers.Lambda(lambda x: x * 1.0, name='conv_3d_weight')(conv_output_renormalized),
+        layers.Lambda(lambda x: x * 0.0, name='output_mult_weight')(output_mult)
     ])
 
 

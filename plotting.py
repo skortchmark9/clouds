@@ -69,19 +69,19 @@ def pick(blocks):
     print('block idx', idx)
     return blocks[idx]
 
-def plot_block_with_prediction(model, block_or_blocks):
+def plot_block_with_prediction(model, blocks, idx=None):
     """
     Plots the inputs and 3D truth/prediction for a given block.
     Args:
         model: The trained model.
         block: A dictionary containing the block's data (truth, top_down, altitude_profile).
     """
-    if isinstance(block_or_blocks, list):
-        idx = random.randint(0, len(block_or_blocks) - 1)
-        block = block_or_blocks[idx]
+    if idx is not None:
+        block = blocks[idx]
     else:
-        block = block_or_blocks
-        idx = -1
+        idx = random.randint(0, len(blocks) - 1)
+
+    block = blocks[idx]
 
 
     # Extract inputs and truth from the block
@@ -131,7 +131,7 @@ def plot_block_with_prediction(model, block_or_blocks):
     truth_values = truth.flatten()
     i, j, h = i.flatten(), j.flatten(), h.flatten()
     non_zero_mask = truth_values > 0
-    ax3.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=truth_values[non_zero_mask], cmap='viridis', marker='o')
+    ax3.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=truth_values[non_zero_mask], cmap='viridis', marker='o', vmin=vmin, vmax=vmax)
     ax3.set_xlim(0, i_dim - 1)
     ax3.set_ylim(0, j_dim - 1)
     ax3.set_zlim(0, h_dim - 1)
@@ -149,7 +149,7 @@ def plot_block_with_prediction(model, block_or_blocks):
     h = h.flatten()
     pred_values = prediction.flatten()
     non_zero_mask = pred_values > 0
-    ax4.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=pred_values[non_zero_mask], cmap='viridis', marker='o')
+    ax4.scatter(i[non_zero_mask], j[non_zero_mask], h[non_zero_mask], c=pred_values[non_zero_mask], cmap='viridis', marker='o', vmin=vmin, vmax=vmax)
     ax4.set_xlim(0, i_dim - 1)
     ax4.set_ylim(0, j_dim - 1)
     ax4.set_zlim(0, h_dim - 1)
