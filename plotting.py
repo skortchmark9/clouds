@@ -120,6 +120,10 @@ def plot_block_with_prediction(model, block_or_blocks):
     ax2.set_title("Altitude Profile Input")
     ax2.legend()
 
+    # Calculate global color limits
+    vmin = min(truth.min(), prediction.min())
+    vmax = max(truth.max(), prediction.max())
+
     # Plot the truth 3D grid
     ax3 = fig.add_subplot(223, projection='3d')
     i_dim, j_dim, h_dim = truth.shape

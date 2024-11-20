@@ -266,3 +266,9 @@ stuff I want to try:
 * larger sheets of low condensation inputs
 * should resemble neighboring blocks
 * clusters w/gradients
+* pass in indices as features
+
+
+stuff I want to try...tonight before i pass out:
+* multiply embeddings all the way down
+* could we just have a neuron per pixel?

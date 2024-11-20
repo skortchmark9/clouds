@@ -6,10 +6,26 @@ from tensorflow import keras
 from keras import layers, models, Input, Model
 from keras.models import load_model
 
+
+
 from data_transforms import load_all_blocks_from_disk
 from plotting import plot_block_with_prediction
 import matplotlib.pyplot as plt
 from loss import weighted_loss_with_layerwise_sum_constraint, layerwise_sum_error
+
+def ssim_loss(y_true, y_pred):
+    """
+    Compute SSIM loss between the true and predicted values.
+    Args:
+        y_true: Ground truth tensor.
+        y_pred: Predicted tensor.
+    Returns:
+        SSIM loss (1 - SSIM index), averaged across the batch.
+    """
+    ssim_index = tf.image.ssim(y_true, y_pred, max_val=1.0)  # SSIM index in range [0, 1]
+    return 1.0 - tf.reduce_mean(ssim_index)  # Loss = 1 - SSIM
+
+
 
 MAX_VALUE = np.float32(0.021897616)
 
@@ -140,15 +156,29 @@ def simple_multiply_model(blocks):
         lambda x: tf.expand_dims(x, axis=-1),
         name='top_down_expanded'
     )(top_down_input)
-    output = layers.Multiply()([top_down_expanded, altitude_profile_broadcasted])
-    print("output", output.shape)
 
-    # Renormalize so that the sum of the output matches the sum of the top-down input
-    output_sum = layers.Lambda(
-        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
-        output_shape=(1,),
-        name='output_sum',
-    )(output)
+
+    output_mult = layers.Multiply()([top_down_expanded, altitude_profile_broadcasted])
+    print("output_mult", output_mult.shape)
+
+    # Expand output_mult to add a singleton channel dimension
+    output_mult_expanded = layers.Lambda(
+        lambda x: tf.expand_dims(x, axis=-1), name='expand_output_mult'
+    )(output_mult)  # Shape: (batch_size, 50, 25, 25, 1)
+
+    # Apply Conv3D for feature extraction
+    conv3d_output = layers.Conv3D(
+        filters=16, kernel_size=(3, 3, 3), activation='relu', padding='same', name='conv3d_feature_extraction'
+    )(output_mult_expanded)  # Shape: (batch_size, 50, 25, 25, 16)
+
+    # Reduce to a single channel for condensate levels
+    single_channel = layers.Conv3D(
+        filters=1, kernel_size=(3, 3, 3), activation='relu', padding='same', name='conv3d_output'
+    )(conv3d_output)  # Shape: (batch_size, 50, 25, 25, 1)
+
+    conv_output = layers.Lambda(
+        lambda x: tf.squeeze(x, axis=-1), name='squeeze_final_output'
+    )(single_channel)  # Shape: (batch_size, 50, 25, 25)
 
     # Compute the sum of the top-down input
     top_down_sum = layers.Lambda(
@@ -157,9 +187,39 @@ def simple_multiply_model(blocks):
         name='top_down_sum',
     )(top_down_expanded)
 
+    # Renormalize so that the sum of the output matches the sum of the top-down input
+    conv_output_sum = layers.Lambda(
+        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
+        output_shape=(1,),
+        name='conv_output_sum',
+    )(conv_output)
+
+
+    # Renormalize the output
+    conv_output_renormalized = layers.Lambda(
+        lambda x: x[0] / (x[1] + 1e-10) * x[2],
+        output_shape=(25, 25, h_dim),
+        name='conv_output_renormalized',
+    )([conv_output, conv_output_sum, top_down_sum])
+
+
+
+    output = layers.Add()([
+        layers.Lambda(lambda x: x * 1.0)(conv_output_renormalized),
+        layers.Lambda(lambda x: x * 0.0)(output_mult)
+    ])
+
+
+    # Renormalize so that the sum of the output matches the sum of the top-down input
+    output_sum = layers.Lambda(
+        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
+        output_shape=(1,),
+        name='output_sum',
+    )(output)
+
     # Renormalize the output
     output_renormalized = layers.Lambda(
-        lambda x: x[0] / (x[1] + 1e-8) * x[2],
+        lambda x: x[0] / (x[1] + 1e-10) * x[2],
         output_shape=(25, 25, h_dim),
         name='output_renormalized',
     )([output, output_sum, top_down_sum])
@@ -170,16 +230,11 @@ def simple_multiply_model(blocks):
     model = models.Model(inputs={
         'top_down': top_down_input,
         'altitude_profile': profile_input,
-    }, outputs=output_renormalized)
+    }, outputs=output)
 
-    # Compile the model (no training necessary for this test)
-    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    model.compile(optimizer='adam', loss=ssim_loss, metrics=['mae'])
 
     return model
-
-
-
-
 
 def create_model(blocks):
     # Input for top_down data (25x25 grid)
