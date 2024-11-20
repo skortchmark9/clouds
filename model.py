@@ -13,6 +13,110 @@ from loss import weighted_loss_with_layerwise_sum_constraint, layerwise_sum_erro
 
 MAX_VALUE = np.float32(0.021897616)
 
+def multiply_model_with_height_embeddings(blocks):
+    # Get height dimension from example block
+    h_dim = len(blocks[0]['altitude_profile'])
+
+    # Input for top-down data (25x25 grid)
+    top_down_input = Input(shape=(25, 25), name='top_down')
+
+    # Input for altitude profile (1D array of height-level condensation values)
+    profile_input = Input(shape=(h_dim,), name='altitude_profile')
+
+   # Trainable embedding for height levels
+    n_embeddings = 32
+    height_indices = tf.range(h_dim, dtype=tf.int32)  # Indices for height levels (0 to h_dim-1)
+    height_embedding_layer = layers.Embedding(input_dim=h_dim, output_dim=n_embeddings, name='height_embedding')
+    height_embeddings = height_embedding_layer(height_indices)  # Shape: (h_dim, n_embeddings)
+
+    # Expand altitude profile for element-wise multiplication
+    profile_expanded = layers.Lambda(
+        lambda x: tf.expand_dims(x, axis=-1),
+        name='expand_profile'
+    )(profile_input)  # Shape: (batch_size, h_dim, 1)
+
+    print('height embeddings shape', height_embeddings.shape)
+    print('altitude profile expanded shape', profile_expanded.shape)
+    # Tile height embeddings to match the batch size
+    height_embeddings_batch = layers.Lambda(
+        lambda inputs: tf.tile(
+            tf.expand_dims(inputs[0], axis=0),  # Add batch dimension to height_embeddings
+            [tf.shape(inputs[1])[0], 1, 1]  # Tile to match batch size
+        ),
+        name='tile_height_embeddings'
+    )([height_embeddings, profile_input])  # Pass height_embeddings and profile_input
+
+    print('height embeddings batch', height_embeddings_batch.shape)
+
+    # Element-wise multiplication of altitude profile and embeddings
+    altitude_profile_with_embeddings = layers.Multiply(
+        name='multiply_profile_and_embeddings'
+    )([profile_expanded, height_embeddings_batch])  # Shape: (batch_size, h_dim, n_embeddings)
+    
+    # Reduce dimensionality using a deeper network
+    altitude_profile_reduced = layers.Dense(
+        n_embeddings, activation='relu', name='dense1'
+    )(altitude_profile_with_embeddings)  # Shape: (batch_size, h_dim, n_embeddings)
+    altitude_profile_reduced = layers.Dense(
+        1, activation=None, name='dense2'
+    )(altitude_profile_reduced)  # Shape: (batch_size, h_dim, 1)
+
+    # Squeeze the reduced dimension
+    altitude_profile_squeezed = layers.Lambda(
+        lambda x: tf.squeeze(x, axis=-1),
+        name='squeeze_reduced_profile'
+    )(altitude_profile_reduced)  # Shape: (h_dim,)
+
+    altitude_profile_broadcasted = layers.Lambda(
+        lambda x: tf.tile(tf.expand_dims(tf.expand_dims(x, axis=1), axis=2), [1, 25, 25, 1]),
+        output_shape=(25, 25, h_dim),
+        name='altitude_profile_broadcasted'
+    )(altitude_profile_squeezed)
+    print("alt profile broadcasted", altitude_profile_broadcasted.shape)
+
+    # Multiply altitude profile with top-down input
+    top_down_expanded = layers.Lambda(
+        lambda x: tf.expand_dims(x, axis=-1),
+        name='top_down_expanded'
+    )(top_down_input)
+    output = layers.Multiply()([top_down_expanded, altitude_profile_broadcasted])
+    print("output", output.shape)
+
+    # Renormalize so that the sum of the output matches the sum of the top-down input
+    output_sum = layers.Lambda(
+        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
+        output_shape=(1,),
+        name='output_sum',
+    )(output)
+
+    # Compute the sum of the top-down input
+    top_down_sum = layers.Lambda(
+        lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True),
+        output_shape=(1,),
+        name='top_down_sum',
+    )(top_down_expanded)
+
+    # Renormalize the output
+    output_renormalized = layers.Lambda(
+        lambda x: x[0] / (x[1] + 1e-8) * x[2],
+        output_shape=(25, 25, h_dim),
+        name='output_renormalized',
+    )([output, output_sum, top_down_sum])
+
+
+
+    # Define the model
+    model = models.Model(inputs={
+        'top_down': top_down_input,
+        'altitude_profile': profile_input,
+    }, outputs=output_renormalized)
+
+    # Compile the model (no training necessary for this test)
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+    return model
+
+
 
 def simple_multiply_model(blocks):
     # Get height dimension from example block
