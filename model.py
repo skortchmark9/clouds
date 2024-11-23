@@ -187,6 +187,76 @@ def multiply_model_with_height_embeddings(blocks):
     return model
 
 
+# Define a custom layer to hold learnable weights
+class LearnableWeightsLayer(layers.Layer):
+    def __init__(self, grid_shape, height_dim, **kwargs):
+        super().__init__(**kwargs)
+        self.learnable_weights = self.add_weight(
+            name="learnable_weights",
+            shape=(grid_shape[0], grid_shape[1], height_dim),
+            initializer="random_normal",
+            trainable=True,
+        )
+
+    def call(self, inputs):
+        batch_size = tf.shape(inputs)[0]
+        return tf.tile(
+            tf.expand_dims(self.learnable_weights, axis=0),
+            [batch_size, 1, 1, 1]
+        )
+
+
+
+
+def simple_multiply_model(blocks):
+    # Get height dimension from example block
+    h_dim = len(blocks[0]['altitude_profile'])
+
+    # Input for top-down data (25x25 grid)
+    top_down_input = Input(shape=(25, 25), name='top_down')
+
+    # Input for altitude profile (1D array of height-level condensation values)
+    profile_input = Input(shape=(h_dim,), name='altitude_profile')
+
+    altitude_profile_broadcasted = layers.Lambda(
+        lambda x: tf.tile(tf.expand_dims(tf.expand_dims(x, axis=1), axis=2), [1, 25, 25, 1]),
+        output_shape=(25, 25, h_dim),
+        name='altitude_profile_broadcasted'
+    )(profile_input)
+    print("alt profile broadcasted", altitude_profile_broadcasted.shape)
+
+    # Multiply altitude profile with top-down input
+    top_down_expanded = layers.Lambda(
+        lambda x: tf.expand_dims(x, axis=-1),
+        name='top_down_expanded'
+    )(top_down_input)
+
+    # Add learnable weight matrix using the custom layer
+    learnable_weights_broadcasted = LearnableWeightsLayer(grid_shape=(25, 25), height_dim=h_dim)(
+        top_down_input
+    )  # Dummy input to maintain graph connections
+
+    output_mult = layers.Multiply()([top_down_expanded, altitude_profile_broadcasted, learnable_weights_broadcasted])
+    print("output_mult", output_mult.shape)
+
+
+   # Renormalize to match sum of base output
+    base_sum = layers.Lambda(lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True))(top_down_expanded)
+    output_sum = layers.Lambda(lambda x: tf.reduce_sum(x, axis=[1, 2, 3], keepdims=True))(output_mult)
+    renormalized_output = layers.Lambda(
+        lambda x: x[0] / (x[1] + 1e-8) * x[2]
+    )([output_mult, output_sum, base_sum])
+
+    model = models.Model(inputs={
+        'top_down': top_down_input,
+        'altitude_profile': profile_input,
+    }, outputs=renormalized_output)
+
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+
+
 def simple_adjustment_model(blocks):
     # Get height dimension from example block
     h_dim = len(blocks[0]['altitude_profile'])
@@ -393,8 +463,8 @@ def multiply_model_with_3d_conv(blocks):
 
 
     output = layers.Add()([
-        layers.Lambda(lambda x: x * 0.1, name='conv_3d_weight')(conv_output_renormalized),
-        layers.Lambda(lambda x: x * 0.9, name='output_mult_weight')(output_mult)
+        layers.Lambda(lambda x: x * 0.01, name='conv_3d_weight')(conv_output_renormalized),
+        layers.Lambda(lambda x: x * 0.99, name='output_mult_weight')(output_mult)
     ])
 
 
@@ -420,7 +490,7 @@ def multiply_model_with_3d_conv(blocks):
         'altitude_profile': profile_input,
     }, outputs=output_renormalized)
 
-    model.compile(optimizer='adam', loss=combined_loss, metrics=['mae'])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
 
     return model
 

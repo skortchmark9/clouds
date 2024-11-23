@@ -42,7 +42,7 @@ const INITIAL_VIEW_STATE: MapViewState = {
   zoom: 8,
   pitch: 0,
   minPitch: 0,  
-  maxPitch: 90,
+  maxPitch: 80,
   // minPitch: -70,
   // maxPitch: 100,
   maxZoom: 16,
@@ -302,9 +302,19 @@ export function App({
   return (
     <DeckGL
       layers={[gridcellMesh]}
+      initialViewState={INITIAL_VIEW_STATE}
+      controller={true}
+    >
+      <Map reuseMaps mapStyle={mapStyle} {...INITIAL_VIEW_STATE } />
+    </DeckGL>
+  );
+
+  return (
+    <DeckGL
+      layers={[gridcellMesh]}
       viewState={viewState}
       onViewStateChange={({ viewState }) => setViewState(viewState)}
-      controller={false}
+      controller={true}
     >
       {/* <Map reuseMaps mapStyle={mapStyle} {...INITIAL_VIEW_STATE} /> */}
     </DeckGL>
