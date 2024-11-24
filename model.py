@@ -15,6 +15,9 @@ from plotting import plot_block_with_prediction
 import matplotlib.pyplot as plt
 from loss import weighted_loss_with_layerwise_sum_constraint, layerwise_sum_error
 
+def mse(y_true, y_pred):
+    return tf.reduce_mean(tf.square(y_true - y_pred))
+
 def ssim_loss(y_true, y_pred):
     """
     Compute SSIM loss between the true and predicted values.
@@ -250,7 +253,7 @@ def simple_multiply_model(blocks):
     model = models.Model(inputs={
         'top_down': top_down_input,
         'altitude_profile': profile_input,
-    }, outputs=renormalized_output)
+    }, outputs=output_mult)
 
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     return model
@@ -597,7 +600,7 @@ def create_model(blocks):
 
 
 class BlockSubsetGenerator(tf.keras.utils.Sequence):
-    def __init__(self, blocks, batch_size=32, subset_size=1000):
+    def __init__(self, blocks, batch_size=32, subset_size=10000):
         """
         Args:
             blocks (list): Full dataset of blocks.
